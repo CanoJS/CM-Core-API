@@ -1,0 +1,19 @@
+**/bin/
+**/obj/
+.vs/
+.idea/
+.vscode/
+TestResults/
+coverage/
+*.user
+*.suo
+*.DotSettings.user
+.env
+.env.*
+!.env.example
+appsettings.Local.json
+supabase/.branches/
+supabase/.temp/
+tmp/
+# CocoIndex Code (ccc)
+/.cocoindex_code/
