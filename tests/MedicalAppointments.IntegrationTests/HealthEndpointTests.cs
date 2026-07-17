@@ -27,4 +27,14 @@ public sealed class HealthEndpointTests : IClassFixture<WebApplicationFactory<Pr
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
+
+    [Fact]
+    public async Task CurrentUser_WithoutAccessToken_ReturnsUnauthorized()
+    {
+        HttpResponseMessage response = await client.GetAsync(
+            "/api/v1/users/me",
+            CancellationToken.None);
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
 }
