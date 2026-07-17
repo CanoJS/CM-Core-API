@@ -17,6 +17,7 @@ internal sealed class DoctorConfiguration : IEntityTypeConfiguration<Doctor>
         builder.Property(doctor => doctor.SpecialtyId).HasColumnName("specialty_id");
         builder.Property(doctor => doctor.Active).HasColumnName("active");
         builder.HasIndex(doctor => doctor.UserId).IsUnique().HasDatabaseName("ux_doctors_user_id");
+        builder.HasIndex(doctor => doctor.SpecialtyId).HasDatabaseName("ix_doctors_specialty_id");
         builder.HasOne<UserProfile>().WithMany().HasForeignKey(doctor => doctor.UserId).OnDelete(DeleteBehavior.Restrict);
         builder.HasOne<Specialty>().WithMany().HasForeignKey(doctor => doctor.SpecialtyId).OnDelete(DeleteBehavior.Restrict);
     }

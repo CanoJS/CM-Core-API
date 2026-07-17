@@ -1,3 +1,5 @@
+using MedicalAppointments.Domain.Common;
+
 namespace MedicalAppointments.Domain.Users;
 
 public sealed class UserProfile
@@ -6,17 +8,40 @@ public sealed class UserProfile
     {
     }
 
-    public UserProfile(Guid id, string fullName, string email, UserRole role)
+    public UserProfile(Guid id, string firstName, string lastName, string email, UserRole role)
     {
+        if (id == Guid.Empty)
+        {
+            throw new DomainException("User identifier is required.");
+        }
+
+        if (string.IsNullOrWhiteSpace(firstName) || firstName.Trim().Length > 100)
+        {
+            throw new DomainException("First name is required and cannot exceed 100 characters.");
+        }
+
+        if (string.IsNullOrWhiteSpace(lastName) || lastName.Trim().Length > 100)
+        {
+            throw new DomainException("Last name is required and cannot exceed 100 characters.");
+        }
+
+        if (string.IsNullOrWhiteSpace(email) || email.Trim().Length > 320)
+        {
+            throw new DomainException("Email is required and cannot exceed 320 characters.");
+        }
+
         Id = id;
-        FullName = fullName.Trim();
+        FirstName = firstName.Trim();
+        LastName = lastName.Trim();
         Email = email.Trim().ToLowerInvariant();
         Role = role;
     }
 
     public Guid Id { get; private set; }
 
-    public string FullName { get; private set; } = string.Empty;
+    public string FirstName { get; private set; } = string.Empty;
+
+    public string LastName { get; private set; } = string.Empty;
 
     public string Email { get; private set; } = string.Empty;
 
