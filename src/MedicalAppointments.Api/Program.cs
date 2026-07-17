@@ -4,6 +4,8 @@ using MedicalAppointments.Api.ErrorHandling;
 using MedicalAppointments.Application.Abstractions.Authentication;
 using MedicalAppointments.Application.Appointments.CreateAppointment;
 using MedicalAppointments.Application.Availability.GetDoctorAvailability;
+using MedicalAppointments.Application.Doctors.GetActiveDoctors;
+using MedicalAppointments.Application.Specialties.GetSpecialties;
 using MedicalAppointments.Application.Users.GetCurrentUser;
 using MedicalAppointments.Infrastructure;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -25,6 +27,8 @@ builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<ICurrentUser, HttpCurrentUser>();
 builder.Services.AddScoped<CreateAppointmentCommandHandler>();
 builder.Services.AddScoped<GetDoctorAvailabilityQueryHandler>();
+builder.Services.AddScoped<GetActiveDoctorsQueryHandler>();
+builder.Services.AddScoped<GetSpecialtiesQueryHandler>();
 builder.Services.AddScoped<GetCurrentUserQueryHandler>();
 builder.Services.AddInfrastructure(connectionString, clinicTimeZone);
 
@@ -73,6 +77,8 @@ app.MapGet("/health/live", () => Results.Ok(new { status = "healthy" }))
 
 app.MapAppointmentEndpoints();
 app.MapAvailabilityEndpoints();
+app.MapDoctorEndpoints();
+app.MapSpecialtyEndpoints();
 app.MapUserEndpoints();
 
 app.Run();
