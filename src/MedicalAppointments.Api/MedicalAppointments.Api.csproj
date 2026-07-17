@@ -4,6 +4,7 @@
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
+    <UserSecretsId>MedicalAppointments.Api-71e2a7a9-bc7d-4e34-bd79-78eebad4ef7e</UserSecretsId>
   </PropertyGroup>
 
   <ItemGroup>
