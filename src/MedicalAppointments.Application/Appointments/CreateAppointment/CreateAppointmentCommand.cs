@@ -5,7 +5,8 @@ namespace MedicalAppointments.Application.Appointments.CreateAppointment;
 public sealed record CreateAppointmentCommand(
     Guid DoctorId,
     DateTimeOffset StartsAt,
-    string Reason) : ICommand<CreateAppointmentResponse>;
+    string Reason,
+    string? IdempotencyKey = null) : ICommand<CreateAppointmentResponse>;
 
 public sealed record CreateAppointmentResponse(
     Guid Id,
@@ -15,4 +16,4 @@ public sealed record CreateAppointmentResponse(
     DateTimeOffset EndsAt,
     string Reason,
     string Status,
-    uint Version);
+    string Version);
