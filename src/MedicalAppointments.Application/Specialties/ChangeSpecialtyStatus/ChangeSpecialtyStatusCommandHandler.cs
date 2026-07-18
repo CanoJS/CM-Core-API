@@ -30,7 +30,7 @@ public sealed class ChangeSpecialtyStatusCommandHandler(
         Specialty specialty = await specialtyRepository.GetByIdAsync(command.SpecialtyId, cancellationToken)
             ?? throw new NotFoundException("The specialty does not exist.");
 
-        specialtyRepository.SetVersion(specialty, version);
+        specialtyRepository.PrepareStatusUpdate(specialty, version);
 
         if (command.Active)
         {

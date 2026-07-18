@@ -10,5 +10,6 @@ public interface ISpecialtyRepository
 
     Task<Specialty?> GetByIdAsync(Guid id, CancellationToken cancellationToken);
 
-    void SetVersion(Specialty specialty, uint version);
+    // Forces an UPDATE guarded by xmin even when Active won't change value, so a same-state PATCH still detects a stale version.
+    void PrepareStatusUpdate(Specialty specialty, uint version);
 }
