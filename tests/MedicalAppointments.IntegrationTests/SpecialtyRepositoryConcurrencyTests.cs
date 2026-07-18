@@ -167,6 +167,74 @@ public sealed class SpecialtyRepositoryConcurrencyTests
         }
     }
 
+    [RealDatabaseFact]
+    public async Task GetByIdForUpdateAsync_WithAlreadyTrackedStaleInstance_ReturnsCurrentActiveValue_AgainstRealDatabase()
+    {
+        // Reproduces EF Core identity resolution defeating the lock: RegisterDoctor/
+        // ChangeDoctorSpecialty call GetByIdAsync (tracking) before GetByIdForUpdateAsync, on the
+        // same DbContext/transaction. If GetByIdForUpdateAsync isn't AsNoTracking, EF returns the
+        // already-tracked instance as-is instead of the row's current column values, so a
+        // concurrent deactivate between the two reads would go unnoticed despite the lock being
+        // acquired correctly.
+        string connectionString = GetRequiredLocalConnectionString();
+        DbContextOptions<MedicalAppointmentsDbContext> options = new DbContextOptionsBuilder<MedicalAppointmentsDbContext>()
+            .UseNpgsql(
+                connectionString,
+                postgres => postgres.MigrationsHistoryTable("__ef_migrations_history", "medical"))
+            .Options;
+
+        await using var seedContext = new MedicalAppointmentsDbContext(options);
+        var specialty = new Specialty(Guid.NewGuid(), $"Concurrency test {Guid.NewGuid():N}");
+        new SpecialtyRepository(seedContext).Add(specialty);
+        await seedContext.SaveChangesAsync(CancellationToken.None);
+
+        try
+        {
+            // Context A: the handler's first, non-locking read - tracks Active=true.
+            await using var contextA = new MedicalAppointmentsDbContext(options);
+            var repositoryA = new SpecialtyRepository(contextA);
+            Specialty trackedStale = await repositoryA.GetByIdAsync(specialty.Id, CancellationToken.None)
+                ?? throw new InvalidOperationException("Seeded specialty is missing.");
+            Assert.True(trackedStale.Active);
+
+            // Context B: another admin deactivates and commits while context A still holds the
+            // now-stale tracked instance.
+            await using (var contextB = new MedicalAppointmentsDbContext(options))
+            {
+                var repositoryB = new SpecialtyRepository(contextB);
+                Specialty toDeactivate = await repositoryB.GetByIdAsync(specialty.Id, CancellationToken.None)
+                    ?? throw new InvalidOperationException("Seeded specialty is missing.");
+                repositoryB.PrepareStatusUpdate(toDeactivate, toDeactivate.Version);
+                toDeactivate.Deactivate();
+                await contextB.SaveChangesAsync(CancellationToken.None);
+            }
+
+            // Context A re-reads under FOR UPDATE on the SAME DbContext that already tracks the
+            // stale instance - exactly what RegisterDoctor/ChangeDoctorSpecialty do.
+            await using IDbContextTransaction transactionA =
+                await contextA.Database.BeginTransactionAsync(CancellationToken.None);
+            try
+            {
+                Specialty? locked = await repositoryA.GetByIdForUpdateAsync(specialty.Id, CancellationToken.None);
+
+                Assert.NotNull(locked);
+                Assert.NotSame(trackedStale, locked);
+                Assert.False(locked.Active);
+            }
+            finally
+            {
+                await transactionA.RollbackAsync(CancellationToken.None);
+            }
+        }
+        finally
+        {
+            await using var cleanupContext = new MedicalAppointmentsDbContext(options);
+            await cleanupContext.Database.ExecuteSqlInterpolatedAsync(
+                $"delete from medical.specialties where id = {specialty.Id}",
+                CancellationToken.None);
+        }
+    }
+
     private static string GetRequiredLocalConnectionString()
     {
         IConfigurationRoot configuration = new ConfigurationBuilder()
