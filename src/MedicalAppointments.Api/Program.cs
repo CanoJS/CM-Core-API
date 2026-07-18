@@ -88,24 +88,47 @@ builder.Services.AddAuthorizationBuilder()
 
 const string FrontendCorsPolicy = "FrontendCors";
 
-string[] allowedOrigins =
-    builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>()
-    ?? [];
-
 builder.Services.AddCors(options =>
 {
     options.AddPolicy(FrontendCorsPolicy, policy =>
     {
-        policy
-            .WithOrigins(allowedOrigins)
-            .AllowAnyHeader()
-            .AllowAnyMethod();
+        // Read from builder.Configuration here, inside the policy delegate, rather than into a
+        // local captured before this point: IOptions<CorsOptions> resolves this delegate lazily
+        // (on first request), not synchronously at registration time. WebApplicationFactory-based
+        // tests inject configuration overrides at builder.Build() time - a value snapshotted
+        // earlier in Program.cs would miss those overrides, while this lazy read sees them.
+        //
+        // Cors:AllowAnyOrigin is a narrow, temporary opt-in for demo/MVP environments that need
+        // quick Angular/Flutter integration without maintaining an allowlist yet. It must never
+        // be combined with AllowCredentials() - browsers reject that combination, and this API
+        // does not rely on cookies for auth (bearer tokens only), so there is nothing to protect
+        // by pairing them anyway. Production deployments should set this to false (or omit it)
+        // and use Cors:AllowedOrigins.
+        bool allowAnyOrigin = builder.Configuration.GetValue<bool>("Cors:AllowAnyOrigin");
+        if (allowAnyOrigin)
+        {
+            policy.AllowAnyOrigin().AllowAnyHeader().AllowAnyMethod();
+        }
+        else
+        {
+            string[] allowedOrigins =
+                builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>()
+                ?? [];
+            policy.WithOrigins(allowedOrigins).AllowAnyHeader().AllowAnyMethod();
+        }
     });
 });
 
 WebApplication app = builder.Build();
 
-if (app.Environment.IsDevelopment())
+// The OpenAPI JSON document is always available in Development. In any other environment
+// (e.g. a Production App Runner deploy) it stays off by default and requires an explicit,
+// narrow opt-in via OpenApi:Enabled - not a full switch to Development, which would also
+// enable detailed exception pages. See README "Habilitar OpenAPI temporalmente" for how to
+// turn this on for a demo and back off afterward.
+bool openApiEnabled = app.Environment.IsDevelopment()
+    || builder.Configuration.GetValue<bool>("OpenApi:Enabled");
+if (openApiEnabled)
 {
     app.MapOpenApi().AllowAnonymous();
 }

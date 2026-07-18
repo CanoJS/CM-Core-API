@@ -194,4 +194,110 @@ dotnet test MedicalAppointments.slnx --no-build --no-restore
 Requieren `ConnectionStrings:Database` configurada localmente; se ejecutan dentro de
 transacciones revertidas y nunca crean usuarios reales de Supabase Auth.
 
+## Deploy en AWS App Runner
+
+Supabase sigue siendo la base de datos y el proveedor de autenticación. AWS App Runner solo
+hospeda el contenedor de esta API — nada de Postgres, Auth ni RLS se mueve a AWS.
+
+### Imagen Docker
+
+`src/MedicalAppointments.Api/Dockerfile` es multi-stage (SDK para build/publish, `aspnet`
+runtime para ejecutar) y ya trae `.dockerignore` en la raíz del repo. El **build context debe
+ser la raíz del repositorio** (el Dockerfile hace `dotnet restore` sobre todo el `.slnx`, no solo
+sobre el proyecto `Api`):
+
+```powershell
+docker build -f src/MedicalAppointments.Api/Dockerfile -t medical-appointments-api .
+docker run --rm -p 8080:8080 --env-file .env.local medical-appointments-api
+```
+
+El contenedor escucha en `0.0.0.0:8080` (`ENV ASPNETCORE_URLS=http://+:8080` en el Dockerfile) y
+corre como el usuario no-root `app` que trae la imagen base — no como root.
+
+### Publicar la imagen (Amazon ECR)
+
+```powershell
+aws ecr create-repository --repository-name medical-appointments-api
+aws ecr get-login-password --region <region> | docker login --username AWS --password-stdin <account-id>.dkr.ecr.<region>.amazonaws.com
+docker tag medical-appointments-api:latest <account-id>.dkr.ecr.<region>.amazonaws.com/medical-appointments-api:latest
+docker push <account-id>.dkr.ecr.<region>.amazonaws.com/medical-appointments-api:latest
+```
+
+### Configuración del servicio App Runner
+
+- **Puerto del contenedor:** `8080` (debe coincidir con `ASPNETCORE_URLS` del Dockerfile).
+- **Health check:** ruta `/health/live`, método HTTP, sin autenticación (`AllowAnonymous`). No
+  se agregó un endpoint `/health` nuevo porque `/health/live` ya cumple el mismo propósito desde
+  una fase anterior; usar esa ruta al configurar el health check de App Runner.
+- **CPU/memoria:** mínimo recomendado para un backend .NET simple (0.25 vCPU / 0.5 GB) suele
+  alcanzar para este MVP; ajustar según carga real observada.
+
+### Variables de entorno
+
+**Aviso sobre nombres:** una preparación de despliegue anterior sugirió los nombres
+`ConnectionStrings__MedicalAppointments`, `Supabase__ServiceRoleKey`, `Supabase__JwtIssuer` y
+`Supabase__JwtAudience`. Ninguno de esos cuatro coincide con una clave de configuración que el
+código realmente lea — documentarlos tal cual habría sido inventar un contrato que no existe. La
+tabla de abajo usa los nombres **reales**, ya usados en `Program.cs`/`DependencyInjection.cs`
+desde fases anteriores:
+
+| Variable (formato .NET `__` para env vars) | Obligatoria | Notas |
+|---|---|---|
+| `ASPNETCORE_ENVIRONMENT` | Recomendada | `Production` en App Runner. |
+| `ASPNETCORE_URLS` | No | Ya fijada en el Dockerfile (`http://+:8080`); solo si necesitas otro puerto. |
+| `ConnectionStrings__Database` | **Sí** | Cadena de conexión a Postgres de Supabase. Incluir `SSL Mode=Require` (Supabase exige TLS fuera de la red interna de Docker local). |
+| `Supabase__ProjectUrl` | **Sí** | `https://<project-ref>.supabase.co`. También se usa para derivar el `issuer` del JWT (`{ProjectUrl}/auth/v1`) — no hay una variable `JwtIssuer` separada. La audiencia (`authenticated`) es una constante fija de Supabase, tampoco configurable. |
+| `Supabase__SecretKey` | No | Habilita `POST /api/v1/admin/doctors` (invitar médicos). Sin ella, ese único endpoint responde `503`; el resto de la API funciona. Acepta clave moderna `sb_secret_...` o `service_role` legacy. |
+| `Supabase__DoctorInviteRedirectUrl` | No | Si falta, Supabase usa la Site URL del proyecto. |
+| `Clinic__TimeZone` | No | Por defecto `America/Mexico_City`. |
+| `Cors__AllowedOrigins__0`, `Cors__AllowedOrigins__1`, ... | **Sí** (si hay frontend), salvo que uses `Cors__AllowAnyOrigin=true` | Orígenes exactos de Angular/Flutter-web en producción. Sin esto, CORS bloquea todo origen (lista vacía por defecto). Ejemplo: `Cors__AllowedOrigins__0=https://front.example.com`. |
+| `Cors__AllowAnyOrigin` | No | **Solo para demo/MVP** — ver advertencia abajo. Por defecto `false`, usa `Cors__AllowedOrigins`. |
+| `OpenApi__Enabled` | No | Ver sección siguiente. |
+
+Ninguna de estas variables tiene un valor por defecto que funcione en producción salvo
+`Clinic__TimeZone` y `ASPNETCORE_URLS` — configúralas en la consola de App Runner (o vía
+Secrets Manager para `ConnectionStrings__Database` y `Supabase__SecretKey`), nunca en
+`appsettings.json` ni en el Dockerfile.
+
+### CORS abierto temporal (demo)
+
+Para integrar rápido con Angular/Flutter durante una demo, sin mantener aún un allowlist de
+orígenes, existe un flag angosto:
+
+```powershell
+$env:Cors__AllowAnyOrigin = "true"
+```
+
+Con `Cors__AllowAnyOrigin=true` la política CORS usa `AllowAnyOrigin()` + `AllowAnyHeader()` +
+`AllowAnyMethod()` y **ignora** `Cors__AllowedOrigins`. Nunca se combina con
+`AllowCredentials()` (el navegador lo rechazaría de todos modos) — esta API no depende de
+cookies para autenticación, solo de bearer tokens, así que no hay nada que proteger con esa
+combinación.
+
+**Esto es configuración temporal de demo/MVP, no apta para producción real.** CORS abierto solo
+permite que cualquier origen en el navegador llame la API; no reemplaza autenticación ni
+autorización — JWT, RLS y las reglas de rol siguen aplicando igual. Aun así, en producción real
+usa orígenes específicos:
+
+```powershell
+# Producción real: false (o ausente) y orígenes explícitos
+$env:Cors__AllowAnyOrigin = "false"
+$env:Cors__AllowedOrigins__0 = "https://front.example.com"
+```
+
+### Habilitar OpenAPI temporalmente (demo)
+
+`GET /openapi/v1.json` (documento OpenAPI puro; no incluye una UI de Swagger interactiva — el
+proyecto solo referencia `Microsoft.AspNetCore.OpenApi`, no Swashbuckle) solo se expone
+automáticamente cuando `ASPNETCORE_ENVIRONMENT=Development`. Para una demo en App Runner sin
+cambiar el ambiente completo (que también activaría páginas de error detalladas), se agregó un
+flag angosto:
+
+```powershell
+# En la consola de App Runner, o localmente:
+$env:OpenApi__Enabled = "true"
+```
+
+Quitar la variable (o ponerla en `false`) para volver a ocultar el documento después de la demo.
+
 Consulta [ARCHITECTURE.md](ARCHITECTURE.md) antes de agregar funcionalidades.
