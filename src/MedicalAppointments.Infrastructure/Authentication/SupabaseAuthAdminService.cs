@@ -1,7 +1,7 @@
 using System.Diagnostics;
-using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Text.Json;
 using System.Text.Json.Serialization;
 using MedicalAppointments.Application.Abstractions.Authentication;
 using MedicalAppointments.Application.Common.Exceptions;
@@ -41,22 +41,41 @@ public sealed partial class SupabaseAuthAdminService(
             LogAuthAdminCallFailed(logger, exception, "invite");
             throw new AuthServiceUnavailableException("The identity provider is unavailable.");
         }
+        catch (OperationCanceledException exception) when (!cancellationToken.IsCancellationRequested)
+        {
+            // The caller did not cancel: this is HttpClient's own request timeout
+            // (TaskCanceledException wrapping a TimeoutException), not a client disconnect.
+            LogAuthAdminCallFailed(logger, exception, "invite");
+            throw new AuthServiceUnavailableException("The identity provider is unavailable.");
+        }
 
         using (response)
         {
-            if (response.StatusCode is HttpStatusCode.UnprocessableEntity or HttpStatusCode.Conflict)
-            {
-                throw new ConflictException("A user with this email already exists.");
-            }
-
             if (!response.IsSuccessStatusCode)
             {
+                // Supabase's `error_code` is stable across releases; the HTTP status for the
+                // same condition has varied (400/409/422), so branch on the code, not the
+                // status. The response body is never logged: it may contain the submitted email.
+                string? errorCode = await TryReadErrorCodeAsync(response, cancellationToken);
+                if (errorCode is "email_exists" or "user_already_exists")
+                {
+                    throw new ConflictException("A user with this email already exists.");
+                }
+
                 LogAuthAdminCallRejected(logger, "invite", (int)response.StatusCode, CorrelationId);
                 throw new AuthServiceException("The identity provider rejected the invitation.");
             }
 
-            InviteUserResponse? body = await response.Content.ReadFromJsonAsync<InviteUserResponse>(
-                cancellationToken);
+            InviteUserResponse? body;
+            try
+            {
+                body = await response.Content.ReadFromJsonAsync<InviteUserResponse>(cancellationToken);
+            }
+            catch (JsonException)
+            {
+                body = null;
+            }
+
             if (body is null || body.Id == Guid.Empty)
             {
                 LogAuthAdminCallRejected(logger, "invite", (int)response.StatusCode, CorrelationId);
@@ -64,6 +83,21 @@ public sealed partial class SupabaseAuthAdminService(
             }
 
             return body.Id;
+        }
+    }
+
+    private static async Task<string?> TryReadErrorCodeAsync(
+        HttpResponseMessage response,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            SupabaseErrorBody? body = await response.Content.ReadFromJsonAsync<SupabaseErrorBody>(cancellationToken);
+            return body?.ErrorCode;
+        }
+        catch (JsonException)
+        {
+            return null;
         }
     }
 
@@ -100,10 +134,49 @@ public sealed partial class SupabaseAuthAdminService(
             ? throw new AuthServiceUnavailableException("The identity provider is not configured.")
             : options.Value.SecretKey;
 
+    // Modern secret/publishable keys (`sb_secret_...`, `sb_publishable_...`) are opaque tokens,
+    // not JWTs: Supabase rejects a request that also sends one as a bearer token with
+    // "Invalid JWT". Only the legacy `service_role` key - a JWT - needs the Authorization
+    // header in addition to `apikey`. See Supabase's "Migrating to publishable and secret API
+    // keys" guide (supabase.com/docs/guides/getting-started/migrating-to-new-api-keys).
     private static void ApplySecretKey(HttpRequestMessage request, string secretKey)
     {
         request.Headers.Add("apikey", secretKey);
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", secretKey);
+
+        if (LooksLikeServiceRoleJwt(secretKey))
+        {
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", secretKey);
+        }
+    }
+
+    private static bool LooksLikeServiceRoleJwt(string key)
+    {
+        if (key.StartsWith("sb_secret_", StringComparison.Ordinal) ||
+            key.StartsWith("sb_publishable_", StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        string[] segments = key.Split('.');
+        return segments.Length == 3 && Array.TrueForAll(segments, IsBase64UrlSegment);
+    }
+
+    private static bool IsBase64UrlSegment(string segment)
+    {
+        if (segment.Length == 0)
+        {
+            return false;
+        }
+
+        foreach (char c in segment)
+        {
+            if (!char.IsAsciiLetterOrDigit(c) && c is not ('-' or '_'))
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private Uri BuildInviteUri()
@@ -144,11 +217,16 @@ public sealed partial class SupabaseAuthAdminService(
         Message = "Compensation for user {UserId} skipped: identity provider not configured (trace {TraceId})")]
     private static partial void LogCompensationSkipped(ILogger logger, Guid userId, string traceId);
 
-    private sealed record InviteUserRequest(string Email, [property: JsonPropertyName("data")] InviteUserMetadata Data);
+    private sealed record InviteUserRequest(
+        [property: JsonPropertyName("email")] string Email,
+        [property: JsonPropertyName("data")] InviteUserMetadata Data);
 
     private sealed record InviteUserMetadata(
         [property: JsonPropertyName("first_name")] string FirstName,
         [property: JsonPropertyName("last_name")] string LastName);
 
-    private sealed record InviteUserResponse(Guid Id);
+    private sealed record InviteUserResponse([property: JsonPropertyName("id")] Guid Id);
+
+    private sealed record SupabaseErrorBody(
+        [property: JsonPropertyName("error_code")] string? ErrorCode);
 }
