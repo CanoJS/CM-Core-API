@@ -1,6 +1,7 @@
 using MedicalAppointments.Application.Abstractions.Authentication;
 using MedicalAppointments.Application.Abstractions.Messaging;
 using MedicalAppointments.Application.Abstractions.Persistence;
+using MedicalAppointments.Application.Common;
 using MedicalAppointments.Application.Common.Exceptions;
 using MedicalAppointments.Domain.Specialties;
 using MedicalAppointments.Domain.Users;
@@ -39,6 +40,6 @@ public sealed class CreateSpecialtyCommandHandler(
             specialty.Id,
             specialty.Name,
             specialty.Active,
-            SpecialtyVersion.ToToken(specialty.Version));
+            ConcurrencyToken.ToToken(specialty.Version));
     }
 }

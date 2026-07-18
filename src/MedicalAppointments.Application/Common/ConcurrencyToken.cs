@@ -1,8 +1,8 @@
 using System.Globalization;
 
-namespace MedicalAppointments.Application.Specialties;
+namespace MedicalAppointments.Application.Common;
 
-internal static class SpecialtyVersion
+internal static class ConcurrencyToken
 {
     public static string ToToken(uint version) => version.ToString(CultureInfo.InvariantCulture);
 
