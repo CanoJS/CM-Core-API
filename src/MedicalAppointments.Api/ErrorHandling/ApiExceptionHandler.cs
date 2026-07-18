@@ -1,6 +1,7 @@
 using MedicalAppointments.Application.Common.Exceptions;
 using MedicalAppointments.Domain.Common;
 using Microsoft.AspNetCore.Diagnostics;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 
 namespace MedicalAppointments.Api.ErrorHandling;
@@ -16,7 +17,7 @@ public sealed partial class ApiExceptionHandler(
     {
         int statusCode = exception switch
         {
-            ArgumentException or DomainException => StatusCodes.Status400BadRequest,
+            ArgumentException or DomainException or BadHttpRequestException => StatusCodes.Status400BadRequest,
             UnauthorizedAccessException => StatusCodes.Status401Unauthorized,
             ForbiddenException => StatusCodes.Status403Forbidden,
             NotFoundException => StatusCodes.Status404NotFound,
