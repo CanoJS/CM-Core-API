@@ -13,11 +13,15 @@ public sealed class ClinicSchedule(TimeZoneInfo clinicTimeZone) : IClinicSchedul
         DateTimeOffset local = TimeZoneInfo.ConvertTime(startsAt, clinicTimeZone);
         TimeOnly time = TimeOnly.FromDateTime(local.DateTime);
 
+        // time.Second == 0 alone would still accept e.g. 08:00:00.500: TimeOnly.Second only
+        // covers whole seconds, not the sub-second remainder. Checking the full tick-of-day
+        // against a 1-second boundary rejects any fractional second too.
         return IsBusinessDay(local.DayOfWeek)
             && time >= OpenTime
             && time < CloseTime
             && time.Minute % SlotMinutes == 0
-            && time.Second == 0;
+            && time.Second == 0
+            && time.Ticks % TimeSpan.TicksPerSecond == 0;
     }
 
     public IReadOnlyList<DateTimeOffset> GetBookableSlots(DateOnly localDate)

@@ -67,6 +67,17 @@ public sealed class ClinicScheduleTests
     }
 
     [Fact]
+    public void IsBookableSlot_WithFractionalSecond_IsInvalid()
+    {
+        // 08:00:00.500 - whole minute and whole second are both "valid" on their own; only the
+        // sub-second remainder makes this not a bookable slot.
+        DateTime local = Monday.ToDateTime(new TimeOnly(8, 0), DateTimeKind.Unspecified).AddMilliseconds(500);
+        DateTimeOffset slot = new DateTimeOffset(local, ClinicTimeZone.GetUtcOffset(local)).ToUniversalTime();
+
+        Assert.False(Schedule.IsBookableSlot(slot));
+    }
+
+    [Fact]
     public void GetBookableSlots_OnBusinessDay_Returns20SlotsFrom0800To1730Local()
     {
         IReadOnlyList<DateTimeOffset> slots = Schedule.GetBookableSlots(Monday);

@@ -17,7 +17,11 @@ public sealed partial class ApiExceptionHandler(
     {
         int statusCode = exception switch
         {
-            ArgumentException or DomainException or BadHttpRequestException => StatusCodes.Status400BadRequest,
+            // ASP.NET Core itself picks the status for a BadHttpRequestException (400 for a
+            // missing/malformed parameter, 413 for a body that's too large, 415 for an
+            // unsupported media type, ...); preserve it instead of forcing 400 for all of them.
+            BadHttpRequestException badRequest => badRequest.StatusCode,
+            ArgumentException or DomainException => StatusCodes.Status400BadRequest,
             UnauthorizedAccessException => StatusCodes.Status401Unauthorized,
             ForbiddenException => StatusCodes.Status403Forbidden,
             NotFoundException => StatusCodes.Status404NotFound,
@@ -58,8 +62,10 @@ public sealed partial class ApiExceptionHandler(
         StatusCodes.Status403Forbidden => "Forbidden",
         StatusCodes.Status404NotFound => "Resource not found",
         StatusCodes.Status409Conflict => "Concurrency conflict",
+        StatusCodes.Status413PayloadTooLarge => "Payload too large",
         StatusCodes.Status502BadGateway => "Upstream service error",
         StatusCodes.Status503ServiceUnavailable => "Service unavailable",
+        < 500 => "Request error",
         _ => "Server error",
     };
 
