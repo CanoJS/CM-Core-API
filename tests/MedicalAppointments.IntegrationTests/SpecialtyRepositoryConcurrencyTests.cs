@@ -28,14 +28,10 @@ public sealed class SpecialtyRepositoryConcurrencyTests
         Assert.Equal(42u, entry.Property(s => s.Version).OriginalValue);
     }
 
-    [Fact]
+    [RealDatabaseFact]
     public async Task ChangeStatus_WithStaleVersionAndUnchangedState_ThrowsConcurrencyConflict_AgainstRealDatabase()
     {
-        string? connectionString = TryGetLocalConnectionString();
-        if (connectionString is null)
-        {
-            return;
-        }
+        string connectionString = GetRequiredLocalConnectionString();
 
         DbContextOptions<MedicalAppointmentsDbContext> options = new DbContextOptionsBuilder<MedicalAppointmentsDbContext>()
             .UseNpgsql(
@@ -74,14 +70,10 @@ public sealed class SpecialtyRepositoryConcurrencyTests
         }
     }
 
-    [Fact]
+    [RealDatabaseFact]
     public async Task ChangeStatus_WithCurrentVersion_ReturnsNewVersionAfterUpdate_AgainstRealDatabase()
     {
-        string? connectionString = TryGetLocalConnectionString();
-        if (connectionString is null)
-        {
-            return;
-        }
+        string connectionString = GetRequiredLocalConnectionString();
 
         DbContextOptions<MedicalAppointmentsDbContext> options = new DbContextOptionsBuilder<MedicalAppointmentsDbContext>()
             .UseNpgsql(
@@ -114,13 +106,15 @@ public sealed class SpecialtyRepositoryConcurrencyTests
         }
     }
 
-    private static string? TryGetLocalConnectionString()
+    private static string GetRequiredLocalConnectionString()
     {
         IConfigurationRoot configuration = new ConfigurationBuilder()
             .AddUserSecrets<Program>(optional: true)
             .AddEnvironmentVariables()
             .Build();
 
-        return configuration.GetConnectionString("Database");
+        return configuration.GetConnectionString("Database")
+            ?? throw new InvalidOperationException(
+                "RUN_REAL_DB_TESTS=true requires ConnectionStrings:Database via user-secrets or an environment variable.");
     }
 }
