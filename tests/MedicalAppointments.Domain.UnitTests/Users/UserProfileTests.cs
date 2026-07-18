@@ -51,4 +51,35 @@ public sealed class UserProfileTests
 
         Assert.Throws<DomainException>(action);
     }
+
+    [Fact]
+    public void PromoteToDoctor_WhenPatient_ChangesRoleToDoctor()
+    {
+        var profile = new UserProfile(Guid.NewGuid(), "Ana", "López", "ana@example.com", UserRole.Patient);
+
+        profile.PromoteToDoctor();
+
+        Assert.Equal(UserRole.Doctor, profile.Role);
+    }
+
+    [Theory]
+    [InlineData(UserRole.Doctor)]
+    [InlineData(UserRole.Admin)]
+    public void PromoteToDoctor_WhenNotPatient_Throws(UserRole role)
+    {
+        var profile = new UserProfile(Guid.NewGuid(), "Ana", "López", "ana@example.com", role);
+
+        Assert.Throws<DomainException>(profile.PromoteToDoctor);
+    }
+
+    [Fact]
+    public void Activate_SetsActiveToTrue()
+    {
+        var profile = new UserProfile(Guid.NewGuid(), "Ana", "López", "ana@example.com", UserRole.Patient);
+        profile.Deactivate();
+
+        profile.Activate();
+
+        Assert.True(profile.Active);
+    }
 }
