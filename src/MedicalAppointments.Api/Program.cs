@@ -4,7 +4,11 @@ using MedicalAppointments.Api.ErrorHandling;
 using MedicalAppointments.Application.Abstractions.Authentication;
 using MedicalAppointments.Application.Appointments.CreateAppointment;
 using MedicalAppointments.Application.Availability.GetDoctorAvailability;
+using MedicalAppointments.Application.Doctors.ChangeDoctorSpecialty;
+using MedicalAppointments.Application.Doctors.ChangeDoctorStatus;
 using MedicalAppointments.Application.Doctors.GetActiveDoctors;
+using MedicalAppointments.Application.Doctors.GetAdminDoctors;
+using MedicalAppointments.Application.Doctors.RegisterDoctor;
 using MedicalAppointments.Application.Specialties.ChangeSpecialtyStatus;
 using MedicalAppointments.Application.Specialties.CreateSpecialty;
 using MedicalAppointments.Application.Specialties.GetAdminSpecialties;
@@ -36,7 +40,11 @@ builder.Services.AddScoped<GetCurrentUserQueryHandler>();
 builder.Services.AddScoped<CreateSpecialtyCommandHandler>();
 builder.Services.AddScoped<GetAdminSpecialtiesQueryHandler>();
 builder.Services.AddScoped<ChangeSpecialtyStatusCommandHandler>();
-builder.Services.AddInfrastructure(connectionString, clinicTimeZone);
+builder.Services.AddScoped<RegisterDoctorCommandHandler>();
+builder.Services.AddScoped<GetAdminDoctorsQueryHandler>();
+builder.Services.AddScoped<ChangeDoctorStatusCommandHandler>();
+builder.Services.AddScoped<ChangeDoctorSpecialtyCommandHandler>();
+builder.Services.AddInfrastructure(connectionString, clinicTimeZone, projectUrl, builder.Configuration);
 
 builder.Services
     .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
@@ -107,6 +115,7 @@ app.MapAvailabilityEndpoints();
 app.MapDoctorEndpoints();
 app.MapSpecialtyEndpoints();
 app.MapAdminSpecialtyEndpoints();
+app.MapAdminDoctorEndpoints();
 app.MapUserEndpoints();
 
 app.Run();
