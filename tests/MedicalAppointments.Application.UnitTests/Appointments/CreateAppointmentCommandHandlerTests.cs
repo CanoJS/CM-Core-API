@@ -148,10 +148,40 @@ public sealed class CreateAppointmentCommandHandlerTests
         Assert.Equal(winnerAppointmentId, response.Id);
     }
 
+    [Fact]
+    public async Task Handle_WithIdempotencyKey_AppointmentSlotRaceLost_ReplaysWinnersResponseInsteadOfThrowing()
+    {
+        // Reproduces a real bug: two concurrent requests sharing the same Idempotency-Key AND
+        // the same payload target the identical doctor/startsAt (the hash is derived from those
+        // fields), so the race is just as likely to collide on the appointment-slot unique index
+        // (this FIRST SaveChangesAsync) as on the idempotency-key index (the second one). The
+        // original implementation only wrapped the second save in try/catch, so this exact
+        // scenario surfaced a raw conflict instead of replaying the winner's response.
+        var appointments = new AppointmentRepositoryStub();
+        var idempotencyStore = new FakeIdempotencyStore();
+        var unitOfWork = new UnitOfWorkStub(throwOnFirstSave: true);
+        var handler = CreateHandler(
+            appointments,
+            hasConflict: false,
+            idempotencyStore: idempotencyStore,
+            unitOfWork: unitOfWork);
+        var command = new CreateAppointmentCommand(
+            Guid.NewGuid(),
+            new DateTimeOffset(2026, 7, 20, 15, 30, 0, TimeSpan.Zero),
+            "Control anual",
+            "key-slot-race");
+        Guid winnerAppointmentId = idempotencyStore.SeedWinner(CurrentUserId, "key-slot-race", command);
+
+        CreateAppointmentResponse response = await handler.Handle(command, CancellationToken.None);
+
+        Assert.Equal(winnerAppointmentId, response.Id);
+    }
+
     private static CreateAppointmentCommandHandler CreateHandler(
         AppointmentRepositoryStub appointments,
         bool hasConflict,
-        FakeIdempotencyStore? idempotencyStore = null)
+        FakeIdempotencyStore? idempotencyStore = null,
+        UnitOfWorkStub? unitOfWork = null)
     {
         appointments.HasConflict = hasConflict;
         return new CreateAppointmentCommandHandler(
@@ -161,7 +191,7 @@ public sealed class CreateAppointmentCommandHandlerTests
             new DoctorRepositoryStub(),
             appointments,
             idempotencyStore ?? new FakeIdempotencyStore(),
-            new UnitOfWorkStub());
+            unitOfWork ?? new UnitOfWorkStub());
     }
 
     private sealed class CurrentUserStub : ICurrentUser
@@ -230,9 +260,20 @@ public sealed class CreateAppointmentCommandHandlerTests
         }
     }
 
-    private sealed class UnitOfWorkStub : IUnitOfWork
+    private sealed class UnitOfWorkStub(bool throwOnFirstSave = false) : IUnitOfWork
     {
-        public Task<int> SaveChangesAsync(CancellationToken cancellationToken) => Task.FromResult(1);
+        private int callCount;
+
+        public Task<int> SaveChangesAsync(CancellationToken cancellationToken)
+        {
+            callCount++;
+            if (throwOnFirstSave && callCount == 1)
+            {
+                throw new ConflictException("The request conflicts with an existing record.");
+            }
+
+            return Task.FromResult(1);
+        }
     }
 
     // A genuinely-behaving fake (not a stub that throws the exception under test directly): it

@@ -113,15 +113,22 @@ public sealed class CreateAppointmentCommandHandler(
     {
         // The idempotency record needs the appointment's final Version (xmin), which EF only
         // populates on the tracked entity after the INSERT executes. Both writes happen inside
-        // one explicit transaction - not yet committed after the first SaveChangesAsync - so
-        // either both land or neither does.
+        // one explicit transaction - not yet committed until CommitAsync below - so either both
+        // land or neither does.
         await using IUnitOfWorkTransaction transaction = await unitOfWork.BeginTransactionAsync(cancellationToken);
-        await unitOfWork.SaveChangesAsync(cancellationToken);
 
-        CreateAppointmentResponse response = BuildResponse(appointment);
-
+        CreateAppointmentResponse response;
         try
         {
+            // Two concurrent requests carrying the same key AND the same payload target the
+            // same doctor/startsAt by construction (the hash is derived from those fields), so
+            // this first SaveChangesAsync - the appointment insert - is just as likely to be
+            // where the race actually collides (ux_appointments_doctor_slot_scheduled) as the
+            // idempotency insert below. Both must be covered by the same catch, or the loser on
+            // the appointment-slot race gets a raw conflict instead of a replay.
+            await unitOfWork.SaveChangesAsync(cancellationToken);
+            response = BuildResponse(appointment);
+
             idempotencyStore.Stage(
                 currentUser.UserId,
                 Operation,
@@ -134,11 +141,12 @@ public sealed class CreateAppointmentCommandHandler(
         }
         catch (ConflictException)
         {
-            // Another request with the same key won the unique-constraint race and already
-            // committed its own transaction; ours (including the appointment insert above)
-            // rolls back on dispose below. Replay the winner's response instead of surfacing a
-            // spurious error - Postgres only raises this once the winning insert has committed,
-            // so a read here is guaranteed to see it.
+            // Another request won a unique-constraint race (either the appointment slot or the
+            // idempotency key itself) and already committed its own transaction; ours (including
+            // any partial insert) rolls back on dispose below. Replay the winner's response only
+            // if it was truly a duplicate of this exact request (same key + same payload hash) -
+            // Postgres only raises this once the winning insert has committed, so a read here is
+            // guaranteed to see it. Otherwise this is a genuine conflict and must propagate.
             IdempotencyRecord? winner = await idempotencyStore.FindAsync(
                 currentUser.UserId,
                 Operation,
