@@ -71,6 +71,8 @@ public sealed class CreateAppointmentCommandHandlerTests
     private sealed class ClinicScheduleStub : IClinicSchedule
     {
         public bool IsBookableSlot(DateTimeOffset startsAt) => true;
+
+        public IReadOnlyList<DateTimeOffset> GetBookableSlots(DateOnly localDate) => [];
     }
 
     private sealed class DoctorRepositoryStub : IDoctorRepository

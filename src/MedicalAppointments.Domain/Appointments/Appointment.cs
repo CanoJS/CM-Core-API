@@ -66,7 +66,7 @@ public sealed class Appointment
             throw new DomainException("The appointment must be scheduled in the future.");
         }
 
-        if (startsAt.Minute % DurationMinutes != 0 || startsAt.Second != 0)
+        if (!IsOnThirtyMinuteBoundary(startsAt))
         {
             throw new DomainException("The appointment must start on a 30-minute boundary.");
         }
@@ -106,7 +106,7 @@ public sealed class Appointment
             throw new DomainException("A valid doctor and future start time are required.");
         }
 
-        if (startsAt.Minute % DurationMinutes != 0 || startsAt.Second != 0)
+        if (!IsOnThirtyMinuteBoundary(startsAt))
         {
             throw new DomainException("The appointment must start on a 30-minute boundary.");
         }
@@ -143,4 +143,12 @@ public sealed class Appointment
             throw new DomainException("Only scheduled appointments can be modified.");
         }
     }
+
+    // startsAt.Second == 0 alone would still accept e.g. 14:00:00.500: DateTimeOffset has no
+    // public sub-second property besides Ticks, so a fractional second slips through unless the
+    // full tick-of-second remainder is checked too.
+    private static bool IsOnThirtyMinuteBoundary(DateTimeOffset startsAt) =>
+        startsAt.Minute % DurationMinutes == 0
+        && startsAt.Second == 0
+        && startsAt.Ticks % TimeSpan.TicksPerSecond == 0;
 }
