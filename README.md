@@ -38,6 +38,52 @@ funcionan con normalidad y solo el alta de médicos responde `503` hasta que se 
 `Supabase:DoctorInviteRedirectUrl` es opcional; si falta, Supabase usa la Site URL configurada
 en el proyecto.
 
+## Disponibilidad de médicos
+
+`GET /api/v1/doctors/{doctorId}/availability?from=YYYY-MM-DD&to=YYYY-MM-DD` devuelve la
+disponibilidad de un médico agrupada por fecha local de la clínica.
+
+- Requiere autenticación (`401` sin token); cualquier rol autenticado puede consultarla.
+- Zona horaria de la clínica: `America/Mexico_City` (configurable vía `Clinic:TimeZone`).
+- Horario: lunes a viernes, 08:00–18:00 hora local, bloques fijos de 30 minutos (20 bloques por
+  día laborable). Sábados y domingos no producen bloques ni aparecen en la respuesta.
+- `from`/`to` son inclusivos; el rango máximo es 31 fechas inclusivas. `to` no puede ser menor
+  que `from`. Fuera de rango o parámetros ausentes/malformados → `400`.
+- Médico inexistente o inactivo → `404`.
+- `date` es la fecha local (`YYYY-MM-DD`); `startsAt` es el inicio del bloque en UTC (ISO 8601).
+  La duración es siempre 30 minutos fijos: el contrato **no incluye `endsAt`**, a propósito,
+  porque el modelo ya acordado con Angular (`availability.model.ts`) solo tiene `startsAt` y
+  `available`; se documenta aquí en vez de cambiarlo silenciosamente.
+- Un bloque tiene `available: false` si ya está ocupado por una cita `SCHEDULED`, o si ya pasó o
+  es el instante actual (debe ser estrictamente futuro). Las citas `CANCELLED` no ocupan bloques.
+- **La disponibilidad es informativa.** Puede quedar desactualizada de inmediato si otro
+  paciente reserva el mismo bloque; la consulta no bloquea filas ni abre transacciones. La
+  defensa definitiva contra doble reserva es el índice único parcial
+  `ux_appointments_doctor_slot_scheduled` en PostgreSQL, que responde `409` en
+  `POST /api/v1/appointments` si el bloque ya fue tomado entre la consulta y la reserva.
+
+Ejemplo de respuesta:
+
+```jsonc
+[
+  {
+    "date": "2026-07-20",
+    "slots": [
+      { "startsAt": "2026-07-20T14:00:00+00:00", "available": true },
+      { "startsAt": "2026-07-20T14:30:00+00:00", "available": false }
+    ]
+  }
+]
+```
+
+`startsAt` es UTC pero se serializa con offset numérico (`+00:00`), no con sufijo `Z` como en el
+ejemplo de `docs/API-CONVENTIONS.md` — es el comportamiento por defecto de `DateTimeOffset` en
+System.Text.Json (verificado, no un supuesto) y ya aplica igual a `startsAt`/`endsAt` en
+`POST /api/v1/appointments`. Ambos representan el mismo instante UTC; `Date.parse` (JS/Dart) lo
+interpreta igual. Es una discrepancia preexistente entre la documentación y el runtime, no
+introducida en esta fase; no se corrigió aquí para no tocar el formato de endpoints ya
+existentes fuera de esta fase.
+
 ## Validación
 
 ```powershell
