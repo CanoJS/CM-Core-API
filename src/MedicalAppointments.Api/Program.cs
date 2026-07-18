@@ -5,6 +5,9 @@ using MedicalAppointments.Application.Abstractions.Authentication;
 using MedicalAppointments.Application.Appointments.CreateAppointment;
 using MedicalAppointments.Application.Availability.GetDoctorAvailability;
 using MedicalAppointments.Application.Doctors.GetActiveDoctors;
+using MedicalAppointments.Application.Specialties.ChangeSpecialtyStatus;
+using MedicalAppointments.Application.Specialties.CreateSpecialty;
+using MedicalAppointments.Application.Specialties.GetAdminSpecialties;
 using MedicalAppointments.Application.Specialties.GetSpecialties;
 using MedicalAppointments.Application.Users.GetCurrentUser;
 using MedicalAppointments.Infrastructure;
@@ -30,6 +33,9 @@ builder.Services.AddScoped<GetDoctorAvailabilityQueryHandler>();
 builder.Services.AddScoped<GetActiveDoctorsQueryHandler>();
 builder.Services.AddScoped<GetSpecialtiesQueryHandler>();
 builder.Services.AddScoped<GetCurrentUserQueryHandler>();
+builder.Services.AddScoped<CreateSpecialtyCommandHandler>();
+builder.Services.AddScoped<GetAdminSpecialtiesQueryHandler>();
+builder.Services.AddScoped<ChangeSpecialtyStatusCommandHandler>();
 builder.Services.AddInfrastructure(connectionString, clinicTimeZone);
 
 builder.Services
@@ -54,10 +60,13 @@ builder.Services
         };
     });
 
+const string AdminOnlyPolicy = "AdminOnly";
+
 builder.Services.AddAuthorizationBuilder()
     .SetFallbackPolicy(new Microsoft.AspNetCore.Authorization.AuthorizationPolicyBuilder()
         .RequireAuthenticatedUser()
-        .Build());
+        .Build())
+    .AddPolicy(AdminOnlyPolicy, policy => policy.RequireRole("ADMIN"));
 
 const string FrontendCorsPolicy = "FrontendCors";
 
@@ -97,6 +106,7 @@ app.MapAppointmentEndpoints();
 app.MapAvailabilityEndpoints();
 app.MapDoctorEndpoints();
 app.MapSpecialtyEndpoints();
+app.MapAdminSpecialtyEndpoints();
 app.MapUserEndpoints();
 
 app.Run();
