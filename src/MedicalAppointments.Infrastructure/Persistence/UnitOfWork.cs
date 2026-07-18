@@ -1,6 +1,7 @@
 using MedicalAppointments.Application.Abstractions.Persistence;
 using MedicalAppointments.Application.Common.Exceptions;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 using Npgsql;
 
 namespace MedicalAppointments.Infrastructure.Persistence;
@@ -28,5 +29,19 @@ public sealed class UnitOfWork(MedicalAppointmentsDbContext dbContext) : IUnitOf
                 Source = exception.Source,
             };
         }
+    }
+
+    public async Task<IUnitOfWorkTransaction> BeginTransactionAsync(CancellationToken cancellationToken)
+    {
+        IDbContextTransaction transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
+        return new EfUnitOfWorkTransaction(transaction);
+    }
+
+    private sealed class EfUnitOfWorkTransaction(IDbContextTransaction transaction) : IUnitOfWorkTransaction
+    {
+        public Task CommitAsync(CancellationToken cancellationToken) =>
+            transaction.CommitAsync(cancellationToken);
+
+        public ValueTask DisposeAsync() => transaction.DisposeAsync();
     }
 }

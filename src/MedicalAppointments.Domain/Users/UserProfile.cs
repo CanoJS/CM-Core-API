@@ -49,5 +49,17 @@ public sealed class UserProfile
 
     public bool Active { get; private set; } = true;
 
+    public void Activate() => Active = true;
+
     public void Deactivate() => Active = false;
+
+    public void PromoteToDoctor()
+    {
+        if (Role != UserRole.Patient)
+        {
+            throw new DomainException("Only patient profiles can be promoted to doctor.");
+        }
+
+        Role = UserRole.Doctor;
+    }
 }

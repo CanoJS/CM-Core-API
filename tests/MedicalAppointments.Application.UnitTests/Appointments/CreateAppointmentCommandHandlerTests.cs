@@ -5,6 +5,7 @@ using MedicalAppointments.Application.Abstractions.Scheduling;
 using MedicalAppointments.Application.Appointments.CreateAppointment;
 using MedicalAppointments.Application.Common.Exceptions;
 using MedicalAppointments.Domain.Appointments;
+using MedicalAppointments.Domain.Doctors;
 using MedicalAppointments.Domain.Users;
 
 namespace MedicalAppointments.Application.UnitTests.Appointments;
@@ -76,6 +77,21 @@ public sealed class CreateAppointmentCommandHandlerTests
     {
         public Task<bool> IsActiveAsync(Guid doctorId, CancellationToken cancellationToken) =>
             Task.FromResult(true);
+
+        public void Add(Doctor doctor)
+        {
+        }
+
+        public Task<Doctor?> GetByIdAsync(Guid id, CancellationToken cancellationToken) =>
+            Task.FromResult<Doctor?>(null);
+
+        public void PrepareStatusUpdate(Doctor doctor, uint version)
+        {
+        }
+
+        public void PrepareSpecialtyUpdate(Doctor doctor, uint version)
+        {
+        }
     }
 
     private sealed class AppointmentRepositoryStub : IAppointmentRepository

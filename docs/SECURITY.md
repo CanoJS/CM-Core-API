@@ -11,6 +11,12 @@
   solo para presentación; el trigger crea el perfil con rol fijo `PATIENT`.
 - `first_name`, `last_name` o cualquier otro valor de `user_metadata` nunca decide permisos.
 - Toda búsqueda o lectura de notas médicas deberá generar auditoría.
+- `Supabase:SecretKey` (Auth Admin, usado para invitar médicos) solo se configura mediante
+  user-secrets o variable de entorno; nunca en `appsettings.json`, frontend, logs, mensajes de
+  error ni pruebas automatizadas. No es obligatoria al iniciar la API: si falta, el alta de
+  médicos responde `503` sin revelar detalles y el resto de la API sigue funcionando.
+- Las pruebas automatizadas nunca crean usuarios reales en Supabase Auth; usan un fake de
+  `IAuthAdminService`.
 
 Después de desplegar una migración, ejecutar los Database Advisors de Supabase y resolver
 hallazgos antes de publicar el ambiente.

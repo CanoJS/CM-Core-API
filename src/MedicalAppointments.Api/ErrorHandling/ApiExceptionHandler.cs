@@ -21,6 +21,8 @@ public sealed partial class ApiExceptionHandler(
             ForbiddenException => StatusCodes.Status403Forbidden,
             NotFoundException => StatusCodes.Status404NotFound,
             ConflictException => StatusCodes.Status409Conflict,
+            AuthServiceException => StatusCodes.Status502BadGateway,
+            AuthServiceUnavailableException => StatusCodes.Status503ServiceUnavailable,
             _ => StatusCodes.Status500InternalServerError,
         };
 
@@ -55,6 +57,8 @@ public sealed partial class ApiExceptionHandler(
         StatusCodes.Status403Forbidden => "Forbidden",
         StatusCodes.Status404NotFound => "Resource not found",
         StatusCodes.Status409Conflict => "Concurrency conflict",
+        StatusCodes.Status502BadGateway => "Upstream service error",
+        StatusCodes.Status503ServiceUnavailable => "Service unavailable",
         _ => "Server error",
     };
 

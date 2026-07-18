@@ -3,6 +3,8 @@
 @AdminAccessToken = paste-supabase-admin-access-token-here
 @SpecialtyId = 00000000-0000-0000-0000-000000000000
 @SpecialtyVersion = 0
+@DoctorId = 00000000-0000-0000-0000-000000000000
+@DoctorVersion = 0
 
 GET {{MedicalAppointments.Api_HostAddress}}/health/live
 Accept: application/json
@@ -58,4 +60,48 @@ Accept: application/json
 {
   "active": false,
   "version": "{{SpecialtyVersion}}"
+}
+
+###
+
+POST {{MedicalAppointments.Api_HostAddress}}/api/v1/admin/doctors
+Authorization: Bearer {{AdminAccessToken}}
+Content-Type: application/json
+Accept: application/json
+
+{
+  "firstName": "Ana",
+  "lastName": "López",
+  "email": "ana@example.com",
+  "specialtyId": "{{SpecialtyId}}"
+}
+
+###
+
+GET {{MedicalAppointments.Api_HostAddress}}/api/v1/admin/doctors
+Authorization: Bearer {{AdminAccessToken}}
+Accept: application/json
+
+###
+
+PATCH {{MedicalAppointments.Api_HostAddress}}/api/v1/admin/doctors/{{DoctorId}}/status
+Authorization: Bearer {{AdminAccessToken}}
+Content-Type: application/json
+Accept: application/json
+
+{
+  "active": false,
+  "version": "{{DoctorVersion}}"
+}
+
+###
+
+PATCH {{MedicalAppointments.Api_HostAddress}}/api/v1/admin/doctors/{{DoctorId}}/specialty
+Authorization: Bearer {{AdminAccessToken}}
+Content-Type: application/json
+Accept: application/json
+
+{
+  "specialtyId": "{{SpecialtyId}}",
+  "version": "{{DoctorVersion}}"
 }

@@ -1,6 +1,7 @@
 using MedicalAppointments.Application.Abstractions.Authentication;
 using MedicalAppointments.Application.Abstractions.Messaging;
 using MedicalAppointments.Application.Abstractions.Persistence;
+using MedicalAppointments.Application.Common;
 using MedicalAppointments.Application.Common.Exceptions;
 using MedicalAppointments.Domain.Specialties;
 using MedicalAppointments.Domain.Users;
@@ -22,7 +23,7 @@ public sealed class ChangeSpecialtyStatusCommandHandler(
             throw new ForbiddenException("Only administrators can manage specialties.");
         }
 
-        if (!SpecialtyVersion.TryParse(command.Version, out uint version))
+        if (!ConcurrencyToken.TryParse(command.Version, out uint version))
         {
             throw new ArgumentException("The specialty version is invalid.");
         }
@@ -47,6 +48,6 @@ public sealed class ChangeSpecialtyStatusCommandHandler(
             specialty.Id,
             specialty.Name,
             specialty.Active,
-            SpecialtyVersion.ToToken(specialty.Version));
+            ConcurrencyToken.ToToken(specialty.Version));
     }
 }

@@ -1,6 +1,7 @@
 using MedicalAppointments.Application.Abstractions.Authentication;
 using MedicalAppointments.Application.Abstractions.Messaging;
 using MedicalAppointments.Application.Abstractions.Queries;
+using MedicalAppointments.Application.Common;
 using MedicalAppointments.Application.Common.Exceptions;
 using MedicalAppointments.Domain.Users;
 
@@ -28,7 +29,7 @@ public sealed class GetAdminSpecialtiesQueryHandler(
                 specialty.Id,
                 specialty.Name,
                 specialty.Active,
-                SpecialtyVersion.ToToken(specialty.Version)))
+                ConcurrencyToken.ToToken(specialty.Version)))
             .ToArray();
     }
 }
