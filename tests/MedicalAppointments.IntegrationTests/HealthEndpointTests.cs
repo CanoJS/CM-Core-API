@@ -37,4 +37,24 @@ public sealed class HealthEndpointTests : IClassFixture<WebApplicationFactory<Pr
 
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
+
+    [Theory]
+    [InlineData("http://localhost:4200", true)]
+    [InlineData("https://not-configured.example", false)]
+    public async Task CorsPreflight_UsesConfiguredOrigins(string origin, bool shouldBeAllowed)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Options, "/api/v1/specialties");
+        request.Headers.Add("Origin", origin);
+        request.Headers.Add("Access-Control-Request-Method", "GET");
+
+        HttpResponseMessage response = await client.SendAsync(request, CancellationToken.None);
+
+        bool includesOrigin = response.Headers.TryGetValues(
+            "Access-Control-Allow-Origin",
+            out IEnumerable<string>? allowedOrigins)
+            && allowedOrigins.Contains(origin, StringComparer.Ordinal);
+
+        Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
+        Assert.Equal(shouldBeAllowed, includesOrigin);
+    }
 }

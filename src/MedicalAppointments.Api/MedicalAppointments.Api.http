@@ -1,6 +1,30 @@
 @MedicalAppointments.Api_HostAddress = http://localhost:5146
+@AccessToken = paste-supabase-access-token-here
+@SpecialtyId = 00000000-0000-0000-0000-000000000000
 
-GET {{MedicalAppointments.Api_HostAddress}}/weatherforecast/
+GET {{MedicalAppointments.Api_HostAddress}}/health/live
 Accept: application/json
 
 ###
+
+GET {{MedicalAppointments.Api_HostAddress}}/api/v1/users/me
+Authorization: Bearer {{AccessToken}}
+Accept: application/json
+
+###
+
+GET {{MedicalAppointments.Api_HostAddress}}/api/v1/specialties
+Authorization: Bearer {{AccessToken}}
+Accept: application/json
+
+###
+
+GET {{MedicalAppointments.Api_HostAddress}}/api/v1/doctors
+Authorization: Bearer {{AccessToken}}
+Accept: application/json
+
+###
+
+GET {{MedicalAppointments.Api_HostAddress}}/api/v1/doctors?specialtyId={{SpecialtyId}}
+Authorization: Bearer {{AccessToken}}
+Accept: application/json

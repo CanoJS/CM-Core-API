@@ -4,6 +4,8 @@ using MedicalAppointments.Api.ErrorHandling;
 using MedicalAppointments.Application.Abstractions.Authentication;
 using MedicalAppointments.Application.Appointments.CreateAppointment;
 using MedicalAppointments.Application.Availability.GetDoctorAvailability;
+using MedicalAppointments.Application.Doctors.GetActiveDoctors;
+using MedicalAppointments.Application.Specialties.GetSpecialties;
 using MedicalAppointments.Application.Users.GetCurrentUser;
 using MedicalAppointments.Infrastructure;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -25,6 +27,8 @@ builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<ICurrentUser, HttpCurrentUser>();
 builder.Services.AddScoped<CreateAppointmentCommandHandler>();
 builder.Services.AddScoped<GetDoctorAvailabilityQueryHandler>();
+builder.Services.AddScoped<GetActiveDoctorsQueryHandler>();
+builder.Services.AddScoped<GetSpecialtiesQueryHandler>();
 builder.Services.AddScoped<GetCurrentUserQueryHandler>();
 builder.Services.AddInfrastructure(connectionString, clinicTimeZone);
 
@@ -55,6 +59,23 @@ builder.Services.AddAuthorizationBuilder()
         .RequireAuthenticatedUser()
         .Build());
 
+const string FrontendCorsPolicy = "FrontendCors";
+
+string[] allowedOrigins =
+    builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>()
+    ?? [];
+
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy(FrontendCorsPolicy, policy =>
+    {
+        policy
+            .WithOrigins(allowedOrigins)
+            .AllowAnyHeader()
+            .AllowAnyMethod();
+    });
+});
+
 WebApplication app = builder.Build();
 
 if (app.Environment.IsDevelopment())
@@ -64,6 +85,7 @@ if (app.Environment.IsDevelopment())
 
 app.UseExceptionHandler();
 app.UseHttpsRedirection();
+app.UseCors(FrontendCorsPolicy);
 app.UseAuthentication();
 app.UseAuthorization();
 
@@ -73,6 +95,8 @@ app.MapGet("/health/live", () => Results.Ok(new { status = "healthy" }))
 
 app.MapAppointmentEndpoints();
 app.MapAvailabilityEndpoints();
+app.MapDoctorEndpoints();
+app.MapSpecialtyEndpoints();
 app.MapUserEndpoints();
 
 app.Run();
