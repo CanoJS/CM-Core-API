@@ -59,6 +59,41 @@ public sealed class HealthEndpointTests : IClassFixture<WebApplicationFactory<Pr
         Assert.Equal(shouldBeAllowed, includesOrigin);
     }
 
+    [Theory]
+    [InlineData("http://localhost:4200")]
+    [InlineData("https://anything.example")]
+    public async Task CorsPreflight_WithAllowAnyOriginFlag_AllowsAnyOrigin(string origin)
+    {
+        await using var factory = new WebApplicationFactory<Program>();
+        using HttpClient allowAnyClient = factory
+            .WithWebHostBuilder(builder =>
+            {
+                builder.ConfigureLogging(logging => logging.ClearProviders());
+                builder.ConfigureAppConfiguration((_, configBuilder) =>
+                    configBuilder.AddInMemoryCollection(new Dictionary<string, string?>
+                    {
+                        ["Cors:AllowAnyOrigin"] = "true",
+                    }));
+            })
+            .CreateClient();
+
+        using var request = new HttpRequestMessage(HttpMethod.Options, "/api/v1/specialties");
+        request.Headers.Add("Origin", origin);
+        request.Headers.Add("Access-Control-Request-Method", "GET");
+
+        HttpResponseMessage response = await allowAnyClient.SendAsync(request, CancellationToken.None);
+
+        Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
+        Assert.True(response.Headers.TryGetValues(
+            "Access-Control-Allow-Origin",
+            out IEnumerable<string>? allowedOrigins));
+        // AllowAnyOrigin() emits the literal wildcard "*", not an echo of the request's Origin
+        // header - unlike WithOrigins(), which is only safe to echo because it validates against
+        // an explicit allowlist first.
+        Assert.Contains("*", allowedOrigins);
+        Assert.False(response.Headers.Contains("Access-Control-Allow-Credentials"));
+    }
+
     [Fact]
     public async Task OpenApiDocument_InProductionByDefault_IsNotExposed()
     {
