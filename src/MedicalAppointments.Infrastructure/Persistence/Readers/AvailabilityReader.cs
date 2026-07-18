@@ -1,4 +1,5 @@
 using MedicalAppointments.Application.Abstractions.Queries;
+using MedicalAppointments.Application.Common;
 using MedicalAppointments.Domain.Appointments;
 using Microsoft.EntityFrameworkCore;
 
@@ -28,20 +29,12 @@ public sealed class AvailabilityReader(
         return occupied.ToHashSet();
     }
 
-    // Local calendar-day boundaries converted to UTC instants: `fromDate` at 00:00 local
-    // (inclusive) through the day after `toDate` at 00:00 local (exclusive). Public and static
-    // so the boundary math is unit-testable without a DbContext/database.
+    // Kept as a public static wrapper (existing tests/call sites use this name) delegating to
+    // the shared Application.Common.LocalDateRange helper, so the same boundary math is not
+    // duplicated for GetMyAppointments' date filters.
     public static (DateTimeOffset UtcFrom, DateTimeOffset UtcToExclusive) ComputeUtcRange(
         DateOnly fromDate,
         DateOnly toDate,
-        TimeZoneInfo clinicTimeZone)
-    {
-        DateTime localFrom = fromDate.ToDateTime(TimeOnly.MinValue, DateTimeKind.Unspecified);
-        DateTime localToExclusive = toDate.AddDays(1).ToDateTime(TimeOnly.MinValue, DateTimeKind.Unspecified);
-        DateTimeOffset utcFrom = new DateTimeOffset(localFrom, clinicTimeZone.GetUtcOffset(localFrom)).ToUniversalTime();
-        DateTimeOffset utcToExclusive =
-            new DateTimeOffset(localToExclusive, clinicTimeZone.GetUtcOffset(localToExclusive)).ToUniversalTime();
-
-        return (utcFrom, utcToExclusive);
-    }
+        TimeZoneInfo clinicTimeZone) =>
+        LocalDateRange.ToUtcBounds(fromDate, toDate, clinicTimeZone);
 }
