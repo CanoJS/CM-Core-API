@@ -28,7 +28,17 @@ public sealed class Doctor
 
     public bool Active { get; private set; } = true;
 
-    public void ChangeSpecialty(Guid specialtyId) => SpecialtyId = specialtyId;
+    public uint Version { get; private set; }
+
+    public void ChangeSpecialty(Guid specialtyId)
+    {
+        if (specialtyId == Guid.Empty)
+        {
+            throw new DomainException("Specialty is required.");
+        }
+
+        SpecialtyId = specialtyId;
+    }
 
     public void SetActive(bool active) => Active = active;
 }

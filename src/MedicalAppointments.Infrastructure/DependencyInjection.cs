@@ -1,13 +1,16 @@
+using MedicalAppointments.Application.Abstractions.Authentication;
 using MedicalAppointments.Application.Abstractions.Clock;
 using MedicalAppointments.Application.Abstractions.Persistence;
 using MedicalAppointments.Application.Abstractions.Queries;
 using MedicalAppointments.Application.Abstractions.Scheduling;
+using MedicalAppointments.Infrastructure.Authentication;
 using MedicalAppointments.Infrastructure.Clock;
 using MedicalAppointments.Infrastructure.Persistence;
 using MedicalAppointments.Infrastructure.Persistence.Readers;
 using MedicalAppointments.Infrastructure.Persistence.Repositories;
 using MedicalAppointments.Infrastructure.Scheduling;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace MedicalAppointments.Infrastructure;
@@ -17,7 +20,9 @@ public static class DependencyInjection
     public static IServiceCollection AddInfrastructure(
         this IServiceCollection services,
         string connectionString,
-        string clinicTimeZoneId)
+        string clinicTimeZoneId,
+        string supabaseProjectUrl,
+        IConfiguration configuration)
     {
         TimeZoneInfo clinicTimeZone = TimeZoneInfo.FindSystemTimeZoneById(clinicTimeZoneId);
 
@@ -36,7 +41,21 @@ public static class DependencyInjection
         services.AddScoped<ISpecialtyCatalogReader, SpecialtyCatalogReader>();
         services.AddScoped<IAdminSpecialtyReader, AdminSpecialtyReader>();
         services.AddScoped<IUserProfileReader, UserProfileReader>();
+        services.AddScoped<IUserProfileRepository, UserProfileRepository>();
+        services.AddScoped<IAdminDoctorReader, AdminDoctorReader>();
         services.AddScoped<IUnitOfWork, UnitOfWork>();
+
+        // SecretKey is intentionally optional here: it is only required when a doctor is
+        // actually invited, not at startup, so CI and tests can run without it configured.
+        services.Configure<SupabaseAuthAdminOptions>(o =>
+        {
+            o.SecretKey = configuration["Supabase:SecretKey"];
+            o.DoctorInviteRedirectUrl = configuration["Supabase:DoctorInviteRedirectUrl"];
+        });
+        services.AddHttpClient<IAuthAdminService, SupabaseAuthAdminService>(client =>
+        {
+            client.BaseAddress = new Uri($"{supabaseProjectUrl.TrimEnd('/')}/auth/v1/");
+        });
 
         return services;
     }
