@@ -109,6 +109,27 @@ public sealed class ChangeDoctorSpecialtyCommandHandlerTests
     }
 
     [Fact]
+    public async Task Handle_WhenSpecialtyBecameInactiveAfterInitialCheck_ThrowsConflict()
+    {
+        var doctor = new Doctor(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid());
+        var initialSpecialty = new Specialty(Guid.NewGuid(), "Cardiología");
+        var lockedSpecialty = new Specialty(initialSpecialty.Id, "Cardiología");
+        lockedSpecialty.Deactivate();
+        var doctorRepository = new DoctorRepositoryStub(doctor);
+        var handler = CreateHandler(
+            UserRole.Admin,
+            doctorRepository,
+            new SpecialtyRepositoryStub(initialSpecialty, lockedSpecialty));
+
+        await Assert.ThrowsAsync<ConflictException>(() =>
+            handler.Handle(
+                new ChangeDoctorSpecialtyCommand(doctor.Id, initialSpecialty.Id, "0"),
+                CancellationToken.None));
+
+        Assert.False(doctorRepository.PrepareSpecialtyUpdateCalled);
+    }
+
+    [Fact]
     public async Task Handle_WhenVersionIsStaleAndSpecialtyMatchesCurrent_ThrowsConflict()
     {
         var specialty = new Specialty(Guid.NewGuid(), "Cardiología");
@@ -167,7 +188,8 @@ public sealed class ChangeDoctorSpecialtyCommandHandlerTests
         public void PrepareSpecialtyUpdate(Doctor doctor, uint version) => PrepareSpecialtyUpdateCalled = true;
     }
 
-    private sealed class SpecialtyRepositoryStub(Specialty? specialty) : ISpecialtyRepository
+    private sealed class SpecialtyRepositoryStub(Specialty? specialty, Specialty? lockedSpecialty = null)
+        : ISpecialtyRepository
     {
         public Task<bool> ExistsByNameAsync(string name, CancellationToken cancellationToken) =>
             Task.FromResult(false);
@@ -182,6 +204,9 @@ public sealed class ChangeDoctorSpecialtyCommandHandlerTests
         public void PrepareStatusUpdate(Specialty specialty, uint version)
         {
         }
+
+        public Task<Specialty?> GetByIdForUpdateAsync(Guid id, CancellationToken cancellationToken) =>
+            Task.FromResult(lockedSpecialty ?? specialty);
     }
 
     private sealed class UnitOfWorkStub(bool throwConflict) : IUnitOfWork

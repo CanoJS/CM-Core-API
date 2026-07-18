@@ -20,6 +20,8 @@ public sealed class RegisterDoctorCommandHandler(
     IUnitOfWork unitOfWork)
     : ICommandHandler<RegisterDoctorCommand, RegisterDoctorResponse>
 {
+    private static readonly TimeSpan CompensationTimeout = TimeSpan.FromSeconds(5);
+
     public async Task<RegisterDoctorResponse> Handle(
         RegisterDoctorCommand command,
         CancellationToken cancellationToken)
@@ -63,14 +65,30 @@ public sealed class RegisterDoctorCommandHandler(
                 ?? throw new InvalidOperationException(
                     "The invited user profile was not provisioned by the signup trigger.");
 
+            await using IUnitOfWorkTransaction transaction =
+                await unitOfWork.BeginTransactionAsync(cancellationToken);
+
+            // ux_doctors_user_id is the definitive guard against double-registering the same
+            // invited user, but it says nothing about the specialty's active flag. Supabase
+            // invitation is a network round-trip, so another admin can deactivate the specialty
+            // between the check above and this point; re-read it under a row lock so that race
+            // is either serialized against us or caught here instead of silently persisted.
+            Specialty lockedSpecialty =
+                await specialtyRepository.GetByIdForUpdateAsync(command.SpecialtyId, cancellationToken)
+                    ?? throw new NotFoundException("The specialty does not exist.");
+
+            if (!lockedSpecialty.Active)
+            {
+                throw new ConflictException("The specialty is inactive.");
+            }
+
             profile.PromoteToDoctor();
 
-            var doctor = new Doctor(Guid.NewGuid(), invitedUserId, specialty.Id);
+            var doctor = new Doctor(Guid.NewGuid(), invitedUserId, lockedSpecialty.Id);
             doctorRepository.Add(doctor);
 
-            // The specialty's unique index and ux_doctors_user_id are the definitive guards
-            // against races; the checks above only improve the error message for the common case.
             await unitOfWork.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
 
             return new RegisterDoctorResponse(
                 doctor.Id,
@@ -78,22 +96,33 @@ public sealed class RegisterDoctorCommandHandler(
                 profile.FirstName,
                 profile.LastName,
                 profile.Email,
-                new SpecialtyResponse(specialty.Id, specialty.Name),
+                new SpecialtyResponse(lockedSpecialty.Id, lockedSpecialty.Name),
                 doctor.Active,
                 ConcurrencyToken.ToToken(doctor.Version));
         }
         catch (Exception)
         {
-            // A compensation failure must never mask the original persistence error.
-            try
-            {
-                await authAdminService.DeleteUserAsync(invitedUserId, cancellationToken);
-            }
-            catch
-            {
-            }
-
+            await CompensateAsync(invitedUserId);
             throw;
+        }
+    }
+
+    private async Task CompensateAsync(Guid invitedUserId)
+    {
+        // `cancellationToken` from the original request may already be cancelled (client
+        // disconnect, request timeout) by the time we get here, which would make DeleteUserAsync
+        // a guaranteed no-op right when it's needed most. Compensation runs on its own bounded
+        // token instead, independent of the caller's, so a cancelled or failed request still
+        // revokes the Supabase invitation. A compensation failure must never mask the original
+        // persistence/validation error, so it is swallowed here; DeleteUserAsync already logs it
+        // with structured, secret-free fields.
+        using var compensationCts = new CancellationTokenSource(CompensationTimeout);
+        try
+        {
+            await authAdminService.DeleteUserAsync(invitedUserId, compensationCts.Token);
+        }
+        catch
+        {
         }
     }
 

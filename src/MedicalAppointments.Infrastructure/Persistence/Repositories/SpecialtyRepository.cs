@@ -25,4 +25,12 @@ public sealed class SpecialtyRepository(MedicalAppointmentsDbContext dbContext) 
         entry.Property(entity => entity.Active).IsModified = true;
         entry.Property(entity => entity.Version).OriginalValue = version;
     }
+
+    // `select *` omits Postgres system columns, so xmin must be selected explicitly. Must run
+    // inside a transaction (see IUnitOfWork.BeginTransactionAsync) for the row lock to hold
+    // until the caller commits or rolls back.
+    public Task<Specialty?> GetByIdForUpdateAsync(Guid id, CancellationToken cancellationToken) =>
+        dbContext.Specialties
+            .FromSqlInterpolated($"select id, name, active, xmin from medical.specialties where id = {id} for update")
+            .FirstOrDefaultAsync(cancellationToken);
 }

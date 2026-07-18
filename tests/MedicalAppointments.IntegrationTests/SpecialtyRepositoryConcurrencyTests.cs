@@ -106,6 +106,67 @@ public sealed class SpecialtyRepositoryConcurrencyTests
         }
     }
 
+    [RealDatabaseFact]
+    public async Task GetByIdForUpdateAsync_BlocksConcurrentDeactivate_UntilTransactionCompletes_AgainstRealDatabase()
+    {
+        string connectionString = GetRequiredLocalConnectionString();
+        DbContextOptions<MedicalAppointmentsDbContext> options = new DbContextOptionsBuilder<MedicalAppointmentsDbContext>()
+            .UseNpgsql(
+                connectionString,
+                postgres => postgres.MigrationsHistoryTable("__ef_migrations_history", "medical"))
+            .Options;
+
+        await using var seedContext = new MedicalAppointmentsDbContext(options);
+        var specialty = new Specialty(Guid.NewGuid(), $"Concurrency test {Guid.NewGuid():N}");
+        new SpecialtyRepository(seedContext).Add(specialty);
+        await seedContext.SaveChangesAsync(CancellationToken.None);
+
+        try
+        {
+            await using var lockingContext = new MedicalAppointmentsDbContext(options);
+            var lockingRepository = new SpecialtyRepository(lockingContext);
+            await using IDbContextTransaction lockingTransaction =
+                await lockingContext.Database.BeginTransactionAsync(CancellationToken.None);
+
+            // Row lock acquired here must block the concurrent deactivate below until this
+            // transaction commits - this is what RegisterDoctor/ChangeDoctorSpecialty rely on
+            // to serialize against another admin deactivating the specialty mid-flight.
+            Specialty? locked = await lockingRepository.GetByIdForUpdateAsync(specialty.Id, CancellationToken.None);
+            Assert.NotNull(locked);
+            Assert.True(locked.Active);
+
+            await using var deactivatingContext = new MedicalAppointmentsDbContext(options);
+            var deactivatingRepository = new SpecialtyRepository(deactivatingContext);
+            Task deactivateTask = Task.Run(async () =>
+            {
+                Specialty toDeactivate = await deactivatingRepository.GetByIdAsync(specialty.Id, CancellationToken.None)
+                    ?? throw new InvalidOperationException("Seeded specialty is missing.");
+                deactivatingRepository.PrepareStatusUpdate(toDeactivate, toDeactivate.Version);
+                toDeactivate.Deactivate();
+                await deactivatingContext.SaveChangesAsync(CancellationToken.None);
+            });
+
+            Task firstToComplete = await Task.WhenAny(deactivateTask, Task.Delay(TimeSpan.FromSeconds(2)));
+            Assert.NotSame(deactivateTask, firstToComplete);
+
+            await lockingTransaction.CommitAsync(CancellationToken.None);
+            await deactivateTask;
+
+            await using var readContext = new MedicalAppointmentsDbContext(options);
+            Specialty? afterCommit = await new SpecialtyRepository(readContext)
+                .GetByIdAsync(specialty.Id, CancellationToken.None);
+            Assert.NotNull(afterCommit);
+            Assert.False(afterCommit.Active);
+        }
+        finally
+        {
+            await using var cleanupContext = new MedicalAppointmentsDbContext(options);
+            await cleanupContext.Database.ExecuteSqlInterpolatedAsync(
+                $"delete from medical.specialties where id = {specialty.Id}",
+                CancellationToken.None);
+        }
+    }
+
     private static string GetRequiredLocalConnectionString()
     {
         IConfigurationRoot configuration = new ConfigurationBuilder()

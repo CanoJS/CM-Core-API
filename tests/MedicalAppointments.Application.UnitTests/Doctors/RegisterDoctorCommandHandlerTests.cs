@@ -210,9 +210,53 @@ public sealed class RegisterDoctorCommandHandlerTests
         Assert.True(authAdminService.DeleteCalled);
     }
 
+    [Fact]
+    public async Task Handle_WhenSpecialtyBecameInactiveAfterInvite_CompensatesAndThrowsConflict()
+    {
+        var initialSpecialty = new Specialty(SpecialtyId, "Pediatría");
+        var lockedSpecialty = new Specialty(SpecialtyId, "Pediatría");
+        lockedSpecialty.Deactivate();
+        var authAdminService = new AuthAdminServiceStub();
+        var handler = CreateHandler(
+            UserRole.Admin,
+            specialty: initialSpecialty,
+            lockedSpecialty: lockedSpecialty,
+            authAdminService: authAdminService);
+
+        await Assert.ThrowsAsync<ConflictException>(() =>
+            handler.Handle(
+                new RegisterDoctorCommand("Ana", "López", "ana@example.com", SpecialtyId),
+                CancellationToken.None));
+
+        Assert.True(authAdminService.DeleteCalled);
+        Assert.Equal(InvitedUserId, authAdminService.DeletedUserId);
+    }
+
+    [Fact]
+    public async Task Handle_WhenOriginalTokenIsCancelledAfterInvite_CompensationUsesUsableToken()
+    {
+        using var cts = new CancellationTokenSource();
+        var authAdminService = new AuthAdminServiceStub { CancelAfterInvite = cts };
+        var handler = CreateHandler(
+            UserRole.Admin,
+            authAdminService: authAdminService,
+            unitOfWork: new UnitOfWorkStub(throwOnSave: false, throwIfCancelled: true));
+
+        await Assert.ThrowsAsync<OperationCanceledException>(() =>
+            handler.Handle(
+                new RegisterDoctorCommand("Ana", "López", "ana@example.com", SpecialtyId),
+                cts.Token));
+
+        Assert.True(authAdminService.DeleteCalled);
+        Assert.NotNull(authAdminService.DeleteCancellationToken);
+        Assert.False(authAdminService.DeleteCancellationToken!.Value.IsCancellationRequested);
+        Assert.True(authAdminService.DeleteCancellationToken.Value.CanBeCanceled);
+    }
+
     private static RegisterDoctorCommandHandler CreateHandler(
         UserRole role,
         Specialty? specialty = null,
+        Specialty? lockedSpecialty = null,
         bool specialtyExists = true,
         bool emailExists = false,
         DoctorRepositoryStub? doctorRepository = null,
@@ -223,7 +267,7 @@ public sealed class RegisterDoctorCommandHandlerTests
         specialty = specialtyExists ? specialty ?? new Specialty(SpecialtyId, "Pediatría") : null;
         return new RegisterDoctorCommandHandler(
             new CurrentUserStub(role),
-            new SpecialtyRepositoryStub(specialty),
+            new SpecialtyRepositoryStub(specialty, lockedSpecialty),
             userProfileRepository ?? new UserProfileRepositoryStub(
                 profile: new UserProfile(InvitedUserId, "Ana", "López", "ana@example.com", UserRole.Patient),
                 exists: emailExists),
@@ -239,7 +283,8 @@ public sealed class RegisterDoctorCommandHandlerTests
         public UserRole Role => role;
     }
 
-    private sealed class SpecialtyRepositoryStub(Specialty? specialty) : ISpecialtyRepository
+    private sealed class SpecialtyRepositoryStub(Specialty? specialty, Specialty? lockedSpecialty = null)
+        : ISpecialtyRepository
     {
         public Task<bool> ExistsByNameAsync(string name, CancellationToken cancellationToken) =>
             Task.FromResult(false);
@@ -254,6 +299,9 @@ public sealed class RegisterDoctorCommandHandlerTests
         public void PrepareStatusUpdate(Specialty specialty, uint version)
         {
         }
+
+        public Task<Specialty?> GetByIdForUpdateAsync(Guid id, CancellationToken cancellationToken) =>
+            Task.FromResult(lockedSpecialty ?? specialty);
     }
 
     private sealed class UserProfileRepositoryStub(UserProfile? profile, bool exists = false)
@@ -301,6 +349,12 @@ public sealed class RegisterDoctorCommandHandlerTests
 
         public string? LastInviteEmail { get; private set; }
 
+        public CancellationToken? DeleteCancellationToken { get; private set; }
+
+        // Simulates a client disconnecting/timing out right after Supabase finishes creating
+        // the user but before the local transaction commits.
+        public CancellationTokenSource? CancelAfterInvite { get; set; }
+
         public Task<Guid> InviteDoctorAsync(
             string email,
             string firstName,
@@ -309,23 +363,33 @@ public sealed class RegisterDoctorCommandHandlerTests
         {
             InviteCalled = true;
             LastInviteEmail = email;
-            return InviteException is not null
-                ? Task.FromException<Guid>(InviteException)
-                : Task.FromResult(InvitedUserId);
+            if (InviteException is not null)
+            {
+                return Task.FromException<Guid>(InviteException);
+            }
+
+            CancelAfterInvite?.Cancel();
+            return Task.FromResult(InvitedUserId);
         }
 
         public Task DeleteUserAsync(Guid userId, CancellationToken cancellationToken)
         {
             DeleteCalled = true;
             DeletedUserId = userId;
+            DeleteCancellationToken = cancellationToken;
             return DeleteException is not null ? Task.FromException(DeleteException) : Task.CompletedTask;
         }
     }
 
-    private sealed class UnitOfWorkStub(bool throwOnSave) : IUnitOfWork
+    private sealed class UnitOfWorkStub(bool throwOnSave, bool throwIfCancelled = false) : IUnitOfWork
     {
         public Task<int> SaveChangesAsync(CancellationToken cancellationToken)
         {
+            if (throwIfCancelled)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+            }
+
             if (throwOnSave)
             {
                 throw new ConflictException("The request conflicts with an existing record.");
