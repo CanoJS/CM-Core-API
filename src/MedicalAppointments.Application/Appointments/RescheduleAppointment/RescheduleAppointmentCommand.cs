@@ -1,14 +1,14 @@
 using MedicalAppointments.Application.Abstractions.Messaging;
 
-namespace MedicalAppointments.Application.Appointments.CreateAppointment;
+namespace MedicalAppointments.Application.Appointments.RescheduleAppointment;
 
-public sealed record CreateAppointmentCommand(
+public sealed record RescheduleAppointmentCommand(
+    Guid AppointmentId,
     Guid DoctorId,
     DateTimeOffset StartsAt,
-    string Reason,
-    string? IdempotencyKey = null) : ICommand<CreateAppointmentResponse>;
+    string Version) : ICommand<RescheduleAppointmentResponse>;
 
-public sealed record CreateAppointmentResponse(
+public sealed record RescheduleAppointmentResponse(
     Guid Id,
     Guid PatientId,
     Guid DoctorId,

@@ -1,8 +1,11 @@
+using MedicalAppointments.Application.Abstractions.Auditing;
 using MedicalAppointments.Application.Abstractions.Authentication;
 using MedicalAppointments.Application.Abstractions.Clock;
+using MedicalAppointments.Application.Abstractions.Idempotency;
 using MedicalAppointments.Application.Abstractions.Persistence;
 using MedicalAppointments.Application.Abstractions.Queries;
 using MedicalAppointments.Application.Abstractions.Scheduling;
+using MedicalAppointments.Infrastructure.Auditing;
 using MedicalAppointments.Infrastructure.Authentication;
 using MedicalAppointments.Infrastructure.Clock;
 using MedicalAppointments.Infrastructure.Persistence;
@@ -43,6 +46,9 @@ public static class DependencyInjection
         services.AddScoped<IUserProfileReader, UserProfileReader>();
         services.AddScoped<IUserProfileRepository, UserProfileRepository>();
         services.AddScoped<IAdminDoctorReader, AdminDoctorReader>();
+        services.AddScoped<IAppointmentReader, AppointmentReader>();
+        services.AddScoped<IIdempotencyStore, IdempotencyStore>();
+        services.AddSingleton<IMedicalNoteAuditLog, MedicalNoteAuditLog>();
         services.AddScoped<IUnitOfWork, UnitOfWork>();
 
         // SecretKey is intentionally optional here: it is only required when a doctor is

@@ -17,6 +17,8 @@ public sealed class MedicalAppointmentsDbContext(DbContextOptions<MedicalAppoint
 
     public DbSet<UserProfile> UserProfiles => Set<UserProfile>();
 
+    internal DbSet<IdempotencyRequest> IdempotencyRequests => Set<IdempotencyRequest>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.HasDefaultSchema("medical");

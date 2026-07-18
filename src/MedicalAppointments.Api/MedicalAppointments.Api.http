@@ -1,10 +1,13 @@
 @MedicalAppointments.Api_HostAddress = http://localhost:5146
 @AccessToken = paste-supabase-access-token-here
+@DoctorAccessToken = paste-supabase-doctor-access-token-here
 @AdminAccessToken = paste-supabase-admin-access-token-here
 @SpecialtyId = 00000000-0000-0000-0000-000000000000
 @SpecialtyVersion = 0
 @DoctorId = 00000000-0000-0000-0000-000000000000
 @DoctorVersion = 0
+@AppointmentId = 00000000-0000-0000-0000-000000000000
+@AppointmentVersion = 1
 
 GET {{MedicalAppointments.Api_HostAddress}}/health/live
 Accept: application/json
@@ -133,3 +136,93 @@ Accept: application/json
 GET {{MedicalAppointments.Api_HostAddress}}/api/v1/doctors/00000000-0000-0000-0000-000000000000/availability?from=2026-07-20&to=2026-07-20
 Authorization: Bearer {{AccessToken}}
 Accept: application/json
+
+###
+
+# PATIENT: crea una cita. Idempotency-Key es opcional; misma clave + mismo payload devuelve la
+# misma respuesta sin crear una segunda cita.
+POST {{MedicalAppointments.Api_HostAddress}}/api/v1/appointments
+Authorization: Bearer {{AccessToken}}
+Content-Type: application/json
+Idempotency-Key: paste-a-client-generated-uuid-here
+Accept: application/json
+
+{
+  "doctorId": "{{DoctorId}}",
+  "startsAt": "2026-07-20T15:00:00Z",
+  "reason": "Consulta general"
+}
+
+###
+
+# PATIENT: solo sus propias citas.
+GET {{MedicalAppointments.Api_HostAddress}}/api/v1/appointments
+Authorization: Bearer {{AccessToken}}
+Accept: application/json
+
+###
+
+# PATIENT: con filtros de status y rango de fechas (America/Mexico_City).
+GET {{MedicalAppointments.Api_HostAddress}}/api/v1/appointments?status=SCHEDULED&from=2026-07-20&to=2026-07-24
+Authorization: Bearer {{AccessToken}}
+Accept: application/json
+
+###
+
+# DOCTOR: solo las citas asignadas a su propio perfil médico.
+GET {{MedicalAppointments.Api_HostAddress}}/api/v1/appointments
+Authorization: Bearer {{DoctorAccessToken}}
+Accept: application/json
+
+###
+
+# ADMIN: todas las citas.
+GET {{MedicalAppointments.Api_HostAddress}}/api/v1/appointments
+Authorization: Bearer {{AdminAccessToken}}
+Accept: application/json
+
+###
+
+# Cualquier rol autorizado: detalle de una cita propia/asignada. Cita ajena o inexistente -> 404.
+GET {{MedicalAppointments.Api_HostAddress}}/api/v1/appointments/{{AppointmentId}}
+Authorization: Bearer {{AccessToken}}
+Accept: application/json
+
+###
+
+# PATIENT: cancela una cita propia con más de 24 h de anticipación.
+PATCH {{MedicalAppointments.Api_HostAddress}}/api/v1/appointments/{{AppointmentId}}/cancel
+Authorization: Bearer {{AccessToken}}
+Content-Type: application/json
+Accept: application/json
+
+{
+  "version": "{{AppointmentVersion}}"
+}
+
+###
+
+# ADMIN: reagenda una cita (médico y/o horario nuevos); solo ADMIN en este MVP.
+PATCH {{MedicalAppointments.Api_HostAddress}}/api/v1/appointments/{{AppointmentId}}/reschedule
+Authorization: Bearer {{AdminAccessToken}}
+Content-Type: application/json
+Accept: application/json
+
+{
+  "doctorId": "{{DoctorId}}",
+  "startsAt": "2026-07-21T16:30:00Z",
+  "version": "{{AppointmentVersion}}"
+}
+
+###
+
+# DOCTOR: marca como atendida una cita propia (no antes de startsAt).
+PATCH {{MedicalAppointments.Api_HostAddress}}/api/v1/appointments/{{AppointmentId}}/attend
+Authorization: Bearer {{DoctorAccessToken}}
+Content-Type: application/json
+Accept: application/json
+
+{
+  "medicalNote": "Diagnóstico y tratamiento indicados.",
+  "version": "{{AppointmentVersion}}"
+}

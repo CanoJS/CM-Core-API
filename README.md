@@ -84,6 +84,97 @@ interpreta igual. Es una discrepancia preexistente entre la documentación y el 
 introducida en esta fase; no se corrigió aquí para no tocar el formato de endpoints ya
 existentes fuera de esta fase.
 
+## Ciclo de vida de citas
+
+Base: `/api/v1/appointments`. Todos los endpoints requieren JWT (`401` sin token).
+
+| Endpoint | Rol | Regla de acceso |
+|---|---|---|
+| `POST /` | PATIENT | `patientId` sale del JWT; nunca se acepta en el body. |
+| `GET /` | PATIENT, DOCTOR, ADMIN | PATIENT: solo propias. DOCTOR: solo asignadas. ADMIN: todas. |
+| `GET /{id}` | PATIENT, DOCTOR, ADMIN | Cita ajena o no asignada → `404` (no revela existencia). |
+| `PATCH /{id}/cancel` | PATIENT, ADMIN | PATIENT: solo propia y con más de 24h de anticipación (exactamente 24h o menos se rechaza). ADMIN: cualquiera `SCHEDULED`, incluso dentro de 24h. DOCTOR no cancela en este MVP. |
+| `PATCH /{id}/reschedule` | ADMIN | Solo ADMIN en este MVP. |
+| `PATCH /{id}/attend` | DOCTOR | Solo el médico asignado; no antes de `startsAt`. |
+
+Reglas compartidas de horario (mismas que disponibilidad): lunes a viernes, 08:00–18:00 hora
+`America/Mexico_City`, bloques exactos de 30 minutos, segundos y fracciones de segundo
+rechazados. `IClock` decide "ahora" en todos los casos — nunca `DateTimeOffset.UtcNow` directo.
+
+`version` viaja como string opaco (token de `xmin`) en request y response de `cancel`,
+`reschedule` y `attend` — igual que en Specialties y Doctors. Token malformado → `400`; token
+obsoleto → `409`.
+
+Un `PATCH` que reagenda al mismo médico y horario todavía ejecuta un `UPDATE` real (fuerza
+`DoctorId`/`StartsAt` como modificados) para que un token `xmin` obsoleto siga detectándose —
+igual mecanismo que el resto de las mutaciones con concurrencia optimista de este proyecto.
+
+`GET /` y `GET /{id}` devuelven un DTO enriquecido con nombres de paciente/médico y especialidad
+(vía `JOIN`, sin duplicar esos datos en `appointments`):
+
+```jsonc
+[
+  {
+    "id": "b5e1...",
+    "patientId": "5e2b...",
+    "patientFirstName": "Jesús",
+    "patientLastName": "Cano Méndez",
+    "patientName": "Jesús Cano Méndez",
+    "doctorId": "9a3f...",
+    "doctorFirstName": "Ana",
+    "doctorLastName": "López",
+    "doctorName": "Ana López",
+    "specialtyId": "1c4d...",
+    "specialtyName": "Cardiología",
+    "startsAt": "2026-07-20T15:00:00+00:00",
+    "endsAt": "2026-07-20T15:30:00+00:00",
+    "status": "SCHEDULED",
+    "reason": "Consulta general",
+    "medicalNote": null,
+    "createdAt": "2026-07-18T18:00:00+00:00",
+    "updatedAt": "2026-07-18T18:00:00+00:00",
+    "version": "1"
+  }
+]
+```
+
+`doctorName`/`patientName` son `"{firstName} {lastName}"`, sin prefijo `Dr./Dra.` — el dominio no
+modela género/título, y adivinarlo a partir del nombre no es correcto ni apropiado. Si el
+frontend necesita el prefijo, debe agregarlo en la capa de presentación.
+
+`medicalNote` nunca aparece en respuestas de PATIENT (`docs/SECURITY.md`: "La nota médica no
+debe aparecer en respuestas de paciente..."; este sistema no tiene rol de recepción/dashboard
+separado, así que la regla se reduce a "PATIENT nunca la ve"). DOCTOR (su propio paciente) y
+ADMIN sí la ven. Cada lectura de una nota no nula queda registrada (`ILogger`, solo
+`appointmentId`/`viewerUserId`, nunca el contenido) — `docs/SECURITY.md`: "Toda búsqueda o
+lectura de notas médicas deberá generar auditoría".
+
+`GET /` acepta filtros opcionales `status` (`SCHEDULED`/`ATTENDED`/`CANCELLED`, inválido → `400`),
+`from`/`to` (`YYYY-MM-DD`, interpretados en `America/Mexico_City`; `to < from` o rango mayor a
+366 fechas inclusivas → `400`).
+
+### Idempotencia en la creación de citas
+
+`POST /` acepta un header opcional `Idempotency-Key` (máx. 200 caracteres). Con la misma clave y
+el mismo payload (mismo `doctorId`+`startsAt`+`reason`), devuelve la respuesta original sin crear
+una segunda cita. Con la misma clave y payload distinto → `409`. Sin header, comportamiento normal
+(no hay cambio si el cliente no la envía).
+
+El alcance es por `(usuario, operación, clave)`, respaldado por la restricción única existente
+`ux_idempotency_user_operation_key` en `medical.idempotency_requests` — la misma clave usada por
+usuarios distintos nunca colisiona. Dos solicitudes concurrentes con la misma clave: la cita y su
+registro de idempotencia se insertan en una sola transacción explícita; si otra solicitud gana la
+carrera por esa clave, la transacción perdedora se revierte (incluida la cita) y se reintenta una
+lectura para devolver la respuesta de la ganadora en vez de un error genérico.
+
+```powershell
+curl -X POST https://localhost:.../api/v1/appointments `
+  -H "Authorization: Bearer <token>" `
+  -H "Idempotency-Key: <uuid-del-cliente>" `
+  -H "Content-Type: application/json" `
+  -d '{"doctorId":"...","startsAt":"2026-07-20T15:00:00Z","reason":"Consulta general"}'
+```
+
 ## Validación
 
 ```powershell

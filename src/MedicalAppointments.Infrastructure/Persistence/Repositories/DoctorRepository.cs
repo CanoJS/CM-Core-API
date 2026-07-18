@@ -17,6 +17,9 @@ public sealed class DoctorRepository(MedicalAppointmentsDbContext dbContext) : I
     public Task<Doctor?> GetByIdAsync(Guid id, CancellationToken cancellationToken) =>
         dbContext.Doctors.FirstOrDefaultAsync(doctor => doctor.Id == id, cancellationToken);
 
+    public Task<Doctor?> GetByUserIdAsync(Guid userId, CancellationToken cancellationToken) =>
+        dbContext.Doctors.FirstOrDefaultAsync(doctor => doctor.UserId == userId, cancellationToken);
+
     public void PrepareStatusUpdate(Doctor doctor, uint version)
     {
         EntityEntry<Doctor> entry = dbContext.Entry(doctor);

@@ -15,7 +15,8 @@ public sealed class Appointment
         Guid patientId,
         Guid doctorId,
         DateTimeOffset startsAt,
-        string reason)
+        string reason,
+        DateTimeOffset now)
     {
         Id = id;
         PatientId = patientId;
@@ -23,8 +24,8 @@ public sealed class Appointment
         StartsAt = startsAt.ToUniversalTime();
         Reason = reason.Trim();
         Status = AppointmentStatus.Scheduled;
-        CreatedAt = DateTimeOffset.UtcNow;
-        UpdatedAt = CreatedAt;
+        CreatedAt = now;
+        UpdatedAt = now;
     }
 
     public Guid Id { get; private set; }
@@ -76,7 +77,7 @@ public sealed class Appointment
             throw new DomainException("Reason is required and cannot exceed 500 characters.");
         }
 
-        return new Appointment(Guid.NewGuid(), patientId, doctorId, startsAt, reason);
+        return new Appointment(Guid.NewGuid(), patientId, doctorId, startsAt, reason, now);
     }
 
     public void CancelByPatient(DateTimeOffset now)
@@ -119,6 +120,11 @@ public sealed class Appointment
     public void Attend(string medicalNote, DateTimeOffset now)
     {
         EnsureScheduled();
+
+        if (now < StartsAt)
+        {
+            throw new DomainException("The appointment cannot be attended before it starts.");
+        }
 
         if (string.IsNullOrWhiteSpace(medicalNote) || medicalNote.Trim().Length > 4_000)
         {
