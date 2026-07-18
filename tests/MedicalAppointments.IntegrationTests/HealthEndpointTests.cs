@@ -1,6 +1,7 @@
 using System.Net;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 
 namespace MedicalAppointments.IntegrationTests;
@@ -56,5 +57,51 @@ public sealed class HealthEndpointTests : IClassFixture<WebApplicationFactory<Pr
 
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
         Assert.Equal(shouldBeAllowed, includesOrigin);
+    }
+
+    [Fact]
+    public async Task OpenApiDocument_InProductionByDefault_IsNotExposed()
+    {
+        // WebApplicationFactory<Program> defaults to the "Development" environment unless told
+        // otherwise, which is the opposite of what an App Runner deploy actually runs - so this
+        // must explicitly set "Production" to reproduce that default instead of relying on the
+        // test host's own default.
+        await using var factory = new WebApplicationFactory<Program>();
+        using HttpClient productionClient = factory
+            .WithWebHostBuilder(builder =>
+            {
+                builder.UseEnvironment("Production");
+                builder.ConfigureLogging(logging => logging.ClearProviders());
+            })
+            .CreateClient();
+
+        HttpResponseMessage response = await productionClient.GetAsync("/openapi/v1.json", CancellationToken.None);
+
+        // Not mapped, so the fallback "authenticated user required" policy applies to the
+        // otherwise-unmatched route before routing would even get to a 404 - either way, the
+        // document itself is never served.
+        Assert.NotEqual(HttpStatusCode.OK, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task OpenApiDocument_InProductionWithOpenApiEnabledFlag_IsExposedWithoutSwitchingEnvironment()
+    {
+        await using var factory = new WebApplicationFactory<Program>();
+        using HttpClient enabledClient = factory
+            .WithWebHostBuilder(builder =>
+            {
+                builder.UseEnvironment("Production");
+                builder.ConfigureLogging(logging => logging.ClearProviders());
+                builder.ConfigureAppConfiguration((_, configBuilder) =>
+                    configBuilder.AddInMemoryCollection(new Dictionary<string, string?>
+                    {
+                        ["OpenApi:Enabled"] = "true",
+                    }));
+            })
+            .CreateClient();
+
+        HttpResponseMessage response = await enabledClient.GetAsync("/openapi/v1.json", CancellationToken.None);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
 }

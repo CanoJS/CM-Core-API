@@ -105,7 +105,14 @@ builder.Services.AddCors(options =>
 
 WebApplication app = builder.Build();
 
-if (app.Environment.IsDevelopment())
+// The OpenAPI JSON document is always available in Development. In any other environment
+// (e.g. a Production App Runner deploy) it stays off by default and requires an explicit,
+// narrow opt-in via OpenApi:Enabled - not a full switch to Development, which would also
+// enable detailed exception pages. See README "Habilitar OpenAPI temporalmente" for how to
+// turn this on for a demo and back off afterward.
+bool openApiEnabled = app.Environment.IsDevelopment()
+    || builder.Configuration.GetValue<bool>("OpenApi:Enabled");
+if (openApiEnabled)
 {
     app.MapOpenApi().AllowAnonymous();
 }
