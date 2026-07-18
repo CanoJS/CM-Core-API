@@ -21,7 +21,7 @@ public sealed class ChangeSpecialtyStatusCommandHandlerTests
             CancellationToken.None);
 
         Assert.False(response.Active);
-        Assert.True(repository.VersionWasSet);
+        Assert.True(repository.PrepareStatusUpdateCalled);
     }
 
     [Fact]
@@ -76,6 +76,21 @@ public sealed class ChangeSpecialtyStatusCommandHandlerTests
     }
 
     [Fact]
+    public async Task Handle_WhenVersionIsStaleAndDesiredStateMatchesCurrent_ThrowsConflict()
+    {
+        var specialty = new Specialty(Guid.NewGuid(), "Pediatría");
+        var repository = new SpecialtyRepositoryStub(specialty);
+        var handler = CreateHandler(repository, UserRole.Admin, throwConflictOnSave: true);
+
+        await Assert.ThrowsAsync<ConflictException>(() =>
+            handler.Handle(
+                new ChangeSpecialtyStatusCommand(specialty.Id, true, "0"),
+                CancellationToken.None));
+
+        Assert.True(repository.PrepareStatusUpdateCalled);
+    }
+
+    [Fact]
     public async Task Handle_WhenVersionIsMalformed_ThrowsArgumentException()
     {
         var specialty = new Specialty(Guid.NewGuid(), "Pediatría");
@@ -102,7 +117,7 @@ public sealed class ChangeSpecialtyStatusCommandHandlerTests
 
     private sealed class SpecialtyRepositoryStub(Specialty? specialty) : ISpecialtyRepository
     {
-        public bool VersionWasSet { get; private set; }
+        public bool PrepareStatusUpdateCalled { get; private set; }
 
         public Task<bool> ExistsByNameAsync(string name, CancellationToken cancellationToken) =>
             Task.FromResult(false);
@@ -114,7 +129,7 @@ public sealed class ChangeSpecialtyStatusCommandHandlerTests
         public Task<Specialty?> GetByIdAsync(Guid id, CancellationToken cancellationToken) =>
             Task.FromResult(specialty);
 
-        public void SetVersion(Specialty specialty, uint version) => VersionWasSet = true;
+        public void PrepareStatusUpdate(Specialty specialty, uint version) => PrepareStatusUpdateCalled = true;
     }
 
     private sealed class UnitOfWorkStub(bool throwConflict) : IUnitOfWork

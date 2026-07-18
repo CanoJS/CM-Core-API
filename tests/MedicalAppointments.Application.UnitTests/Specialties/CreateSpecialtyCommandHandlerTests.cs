@@ -100,7 +100,7 @@ public sealed class CreateSpecialtyCommandHandlerTests
         public Task<Specialty?> GetByIdAsync(Guid id, CancellationToken cancellationToken) =>
             Task.FromResult<Specialty?>(null);
 
-        public void SetVersion(Specialty specialty, uint version)
+        public void PrepareStatusUpdate(Specialty specialty, uint version)
         {
         }
     }
