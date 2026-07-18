@@ -13,6 +13,7 @@ internal sealed class SpecialtyConfiguration : IEntityTypeConfiguration<Specialt
         builder.Property(specialty => specialty.Id).HasColumnName("id").ValueGeneratedNever();
         builder.Property(specialty => specialty.Name).HasColumnName("name").HasMaxLength(120).IsRequired();
         builder.Property(specialty => specialty.Active).HasColumnName("active");
+        builder.Property(specialty => specialty.Version).IsRowVersion().HasColumnName("xmin");
         builder.HasIndex(specialty => specialty.Name).IsUnique().HasDatabaseName("ux_specialties_name");
     }
 }

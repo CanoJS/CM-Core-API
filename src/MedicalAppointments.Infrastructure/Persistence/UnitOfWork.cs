@@ -23,7 +23,7 @@ public sealed class UnitOfWork(MedicalAppointmentsDbContext dbContext) : IUnitOf
         catch (DbUpdateException exception)
             when (exception.InnerException is PostgresException { SqlState: PostgresErrorCodes.UniqueViolation })
         {
-            throw new ConflictException("The selected time slot is no longer available.")
+            throw new ConflictException("The request conflicts with an existing record.")
             {
                 Source = exception.Source,
             };

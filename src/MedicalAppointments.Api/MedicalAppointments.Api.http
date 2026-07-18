@@ -1,6 +1,8 @@
 @MedicalAppointments.Api_HostAddress = http://localhost:5146
 @AccessToken = paste-supabase-access-token-here
+@AdminAccessToken = paste-supabase-admin-access-token-here
 @SpecialtyId = 00000000-0000-0000-0000-000000000000
+@SpecialtyVersion = 0
 
 GET {{MedicalAppointments.Api_HostAddress}}/health/live
 Accept: application/json
@@ -28,3 +30,32 @@ Accept: application/json
 GET {{MedicalAppointments.Api_HostAddress}}/api/v1/doctors?specialtyId={{SpecialtyId}}
 Authorization: Bearer {{AccessToken}}
 Accept: application/json
+
+###
+
+POST {{MedicalAppointments.Api_HostAddress}}/api/v1/admin/specialties
+Authorization: Bearer {{AdminAccessToken}}
+Content-Type: application/json
+Accept: application/json
+
+{
+  "name": "Pediatría"
+}
+
+###
+
+GET {{MedicalAppointments.Api_HostAddress}}/api/v1/admin/specialties
+Authorization: Bearer {{AdminAccessToken}}
+Accept: application/json
+
+###
+
+PATCH {{MedicalAppointments.Api_HostAddress}}/api/v1/admin/specialties/{{SpecialtyId}}/status
+Authorization: Bearer {{AdminAccessToken}}
+Content-Type: application/json
+Accept: application/json
+
+{
+  "active": false,
+  "version": "{{SpecialtyVersion}}"
+}

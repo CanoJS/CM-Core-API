@@ -30,9 +30,11 @@ public static class DependencyInjection
                 postgres => postgres.MigrationsHistoryTable("__ef_migrations_history", "medical")));
         services.AddScoped<IAppointmentRepository, AppointmentRepository>();
         services.AddScoped<IDoctorRepository, DoctorRepository>();
+        services.AddScoped<ISpecialtyRepository, SpecialtyRepository>();
         services.AddScoped<IAvailabilityReader, AvailabilityReader>();
         services.AddScoped<IDoctorCatalogReader, DoctorCatalogReader>();
         services.AddScoped<ISpecialtyCatalogReader, SpecialtyCatalogReader>();
+        services.AddScoped<IAdminSpecialtyReader, AdminSpecialtyReader>();
         services.AddScoped<IUserProfileReader, UserProfileReader>();
         services.AddScoped<IUnitOfWork, UnitOfWork>();
 

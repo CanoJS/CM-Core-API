@@ -15,8 +15,14 @@ public sealed class Specialty
             throw new DomainException("Specialty name is required.");
         }
 
+        string trimmedName = name.Trim();
+        if (trimmedName.Length > 120)
+        {
+            throw new DomainException("Specialty name cannot exceed 120 characters.");
+        }
+
         Id = id;
-        Name = name.Trim();
+        Name = trimmedName;
     }
 
     public Guid Id { get; private set; }
@@ -24,6 +30,10 @@ public sealed class Specialty
     public string Name { get; private set; } = string.Empty;
 
     public bool Active { get; private set; } = true;
+
+    public uint Version { get; private set; }
+
+    public void Activate() => Active = true;
 
     public void Deactivate() => Active = false;
 }
