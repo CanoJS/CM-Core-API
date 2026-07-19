@@ -38,7 +38,7 @@ public sealed class AdminDoctorEndpointTests
 
         HttpResponseMessage response = await client.PostAsJsonAsync(
             "/api/v1/admin/doctors",
-            new { firstName = "Ana", lastName = "López", email = "ana@example.com", specialtyId = SpecialtyId },
+            new { firstName = "Ana", lastName = "López", email = "ana@example.com", specialtyId = SpecialtyId, temporaryPassword = "Doctor123456!" },
             CancellationToken.None);
 
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
@@ -53,7 +53,7 @@ public sealed class AdminDoctorEndpointTests
 
         HttpResponseMessage response = await client.PostAsJsonAsync(
             "/api/v1/admin/doctors",
-            new { firstName = "Ana", lastName = "López", email = "ana@example.com", specialtyId = SpecialtyId },
+            new { firstName = "Ana", lastName = "López", email = "ana@example.com", specialtyId = SpecialtyId, temporaryPassword = "Doctor123456!" },
             CancellationToken.None);
 
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
@@ -66,7 +66,7 @@ public sealed class AdminDoctorEndpointTests
 
         HttpResponseMessage response = await client.PostAsJsonAsync(
             "/api/v1/admin/doctors",
-            new { firstName = "Ana", lastName = "López", email = "ana@example.com", specialtyId = SpecialtyId },
+            new { firstName = "Ana", lastName = "López", email = "ana@example.com", specialtyId = SpecialtyId, temporaryPassword = "Doctor123456!" },
             CancellationToken.None);
         RegisterDoctorResponse? body = await response.Content.ReadFromJsonAsync<RegisterDoctorResponse>(
             CancellationToken.None);
@@ -87,7 +87,40 @@ public sealed class AdminDoctorEndpointTests
 
         HttpResponseMessage response = await client.PostAsJsonAsync(
             "/api/v1/admin/doctors",
-            new { firstName = "", lastName = "López", email = "ana@example.com", specialtyId = SpecialtyId },
+            new { firstName = "", lastName = "López", email = "ana@example.com", specialtyId = SpecialtyId, temporaryPassword = "Doctor123456!" },
+            CancellationToken.None);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task RegisterDoctor_WithoutTemporaryPassword_ReturnsBadRequest()
+    {
+        using HttpClient client = CreateAuthenticatedClient("ADMIN", BuildFixture());
+
+        HttpResponseMessage response = await client.PostAsJsonAsync(
+            "/api/v1/admin/doctors",
+            new { firstName = "Ana", lastName = "López", email = "ana@example.com", specialtyId = SpecialtyId },
+            CancellationToken.None);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task RegisterDoctor_WithTooShortTemporaryPassword_ReturnsBadRequest()
+    {
+        using HttpClient client = CreateAuthenticatedClient("ADMIN", BuildFixture());
+
+        HttpResponseMessage response = await client.PostAsJsonAsync(
+            "/api/v1/admin/doctors",
+            new
+            {
+                firstName = "Ana",
+                lastName = "López",
+                email = "ana@example.com",
+                specialtyId = SpecialtyId,
+                temporaryPassword = "short1!",
+            },
             CancellationToken.None);
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
@@ -102,7 +135,7 @@ public sealed class AdminDoctorEndpointTests
 
         HttpResponseMessage response = await client.PostAsJsonAsync(
             "/api/v1/admin/doctors",
-            new { firstName = "Ana", lastName = "López", email = "ana@example.com", specialtyId = SpecialtyId },
+            new { firstName = "Ana", lastName = "López", email = "ana@example.com", specialtyId = SpecialtyId, temporaryPassword = "Doctor123456!" },
             CancellationToken.None);
 
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
@@ -117,7 +150,7 @@ public sealed class AdminDoctorEndpointTests
 
         HttpResponseMessage response = await client.PostAsJsonAsync(
             "/api/v1/admin/doctors",
-            new { firstName = "Ana", lastName = "López", email = "ana@example.com", specialtyId = SpecialtyId },
+            new { firstName = "Ana", lastName = "López", email = "ana@example.com", specialtyId = SpecialtyId, temporaryPassword = "Doctor123456!" },
             CancellationToken.None);
 
         Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
@@ -132,7 +165,7 @@ public sealed class AdminDoctorEndpointTests
 
         HttpResponseMessage response = await client.PostAsJsonAsync(
             "/api/v1/admin/doctors",
-            new { firstName = "Ana", lastName = "López", email = "ana@example.com", specialtyId = SpecialtyId },
+            new { firstName = "Ana", lastName = "López", email = "ana@example.com", specialtyId = SpecialtyId, temporaryPassword = "Doctor123456!" },
             CancellationToken.None);
 
         Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
@@ -142,12 +175,12 @@ public sealed class AdminDoctorEndpointTests
     public async Task RegisterDoctor_WhenAuthAdminServiceRejects_ReturnsBadGateway()
     {
         Fixture fixture = BuildFixture();
-        fixture.AuthAdminService.InviteException = new AuthServiceException("rejected");
+        fixture.AuthAdminService.CreateException = new AuthServiceException("rejected");
         using HttpClient client = CreateAuthenticatedClient("ADMIN", fixture);
 
         HttpResponseMessage response = await client.PostAsJsonAsync(
             "/api/v1/admin/doctors",
-            new { firstName = "Ana", lastName = "López", email = "ana@example.com", specialtyId = SpecialtyId },
+            new { firstName = "Ana", lastName = "López", email = "ana@example.com", specialtyId = SpecialtyId, temporaryPassword = "Doctor123456!" },
             CancellationToken.None);
 
         Assert.Equal(HttpStatusCode.BadGateway, response.StatusCode);
@@ -157,12 +190,12 @@ public sealed class AdminDoctorEndpointTests
     public async Task RegisterDoctor_WhenAuthAdminServiceIsNotConfigured_ReturnsServiceUnavailable()
     {
         Fixture fixture = BuildFixture();
-        fixture.AuthAdminService.InviteException = new AuthServiceUnavailableException("not configured");
+        fixture.AuthAdminService.CreateException = new AuthServiceUnavailableException("not configured");
         using HttpClient client = CreateAuthenticatedClient("ADMIN", fixture);
 
         HttpResponseMessage response = await client.PostAsJsonAsync(
             "/api/v1/admin/doctors",
-            new { firstName = "Ana", lastName = "López", email = "ana@example.com", specialtyId = SpecialtyId },
+            new { firstName = "Ana", lastName = "López", email = "ana@example.com", specialtyId = SpecialtyId, temporaryPassword = "Doctor123456!" },
             CancellationToken.None);
 
         Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
@@ -411,7 +444,7 @@ public sealed class AdminDoctorEndpointTests
                 services.AddSingleton<IUserProfileRepository>(
                     fixture.UserProfileRepository ?? new UserProfileRepositoryStub(
                         new UserProfile(
-                            fixture.AuthAdminService.InvitedUserId,
+                            fixture.AuthAdminService.CreatedUserId,
                             "Ana",
                             "López",
                             "ana@example.com",
@@ -568,18 +601,19 @@ public sealed class AdminDoctorEndpointTests
 
     private sealed class AuthAdminServiceStub : IAuthAdminService
     {
-        public Exception? InviteException { get; set; }
+        public Exception? CreateException { get; set; }
 
-        public Guid InvitedUserId { get; set; } = Guid.NewGuid();
+        public Guid CreatedUserId { get; set; } = Guid.NewGuid();
 
-        public Task<Guid> InviteDoctorAsync(
+        public Task<Guid> CreateDoctorUserAsync(
             string email,
             string firstName,
             string lastName,
+            string password,
             CancellationToken cancellationToken) =>
-            InviteException is not null
-                ? Task.FromException<Guid>(InviteException)
-                : Task.FromResult(InvitedUserId);
+            CreateException is not null
+                ? Task.FromException<Guid>(CreateException)
+                : Task.FromResult(CreatedUserId);
 
         public Task DeleteUserAsync(Guid userId, CancellationToken cancellationToken) => Task.CompletedTask;
     }

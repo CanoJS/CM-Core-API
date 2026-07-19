@@ -76,7 +76,8 @@ Accept: application/json
   "firstName": "Ana",
   "lastName": "López",
   "email": "ana@example.com",
-  "specialtyId": "{{SpecialtyId}}"
+  "specialtyId": "{{SpecialtyId}}",
+  "temporaryPassword": "Doctor123456!"
 }
 
 ###

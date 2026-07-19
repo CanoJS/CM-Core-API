@@ -51,7 +51,12 @@ public static class AdminDoctorEndpoints
         CancellationToken cancellationToken)
     {
         RegisterDoctorResponse response = await handler.Handle(
-            new RegisterDoctorCommand(request.FirstName, request.LastName, request.Email, request.SpecialtyId),
+            new RegisterDoctorCommand(
+                request.FirstName,
+                request.LastName,
+                request.Email,
+                request.SpecialtyId,
+                request.TemporaryPassword),
             cancellationToken);
 
         return TypedResults.Created($"/api/v1/admin/doctors/{response.Id}", response);
@@ -94,7 +99,12 @@ public static class AdminDoctorEndpoints
         return TypedResults.Ok(response);
     }
 
-    private sealed record RegisterDoctorRequest(string FirstName, string LastName, string Email, Guid SpecialtyId);
+    private sealed record RegisterDoctorRequest(
+        string FirstName,
+        string LastName,
+        string Email,
+        Guid SpecialtyId,
+        string TemporaryPassword);
 
     private sealed record ChangeDoctorStatusRequest(bool Active, string Version);
 

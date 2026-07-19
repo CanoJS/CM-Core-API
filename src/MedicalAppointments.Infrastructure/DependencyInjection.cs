@@ -52,11 +52,10 @@ public static class DependencyInjection
         services.AddScoped<IUnitOfWork, UnitOfWork>();
 
         // SecretKey is intentionally optional here: it is only required when a doctor is
-        // actually invited, not at startup, so CI and tests can run without it configured.
+        // actually registered, not at startup, so CI and tests can run without it configured.
         services.Configure<SupabaseAuthAdminOptions>(o =>
         {
             o.SecretKey = configuration["Supabase:SecretKey"];
-            o.DoctorInviteRedirectUrl = configuration["Supabase:DoctorInviteRedirectUrl"];
         });
         services.AddHttpClient<IAuthAdminService, SupabaseAuthAdminService>(client =>
         {

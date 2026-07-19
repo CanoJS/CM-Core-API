@@ -15,19 +15,24 @@ public sealed partial class SupabaseAuthAdminService(
     IOptions<SupabaseAuthAdminOptions> options,
     ILogger<SupabaseAuthAdminService> logger) : IAuthAdminService
 {
-    public async Task<Guid> InviteDoctorAsync(
+    private static readonly Uri AdminUsersUri = new("admin/users", UriKind.Relative);
+
+    public async Task<Guid> CreateDoctorUserAsync(
         string email,
         string firstName,
         string lastName,
+        string password,
         CancellationToken cancellationToken)
     {
         string secretKey = RequireSecretKey();
 
-        using var request = new HttpRequestMessage(HttpMethod.Post, BuildInviteUri())
+        using var request = new HttpRequestMessage(HttpMethod.Post, AdminUsersUri)
         {
-            Content = JsonContent.Create(new InviteUserRequest(
+            Content = JsonContent.Create(new CreateUserRequest(
                 email,
-                new InviteUserMetadata(firstName, lastName))),
+                password,
+                EmailConfirm: true,
+                new CreateUserMetadata(firstName, lastName))),
         };
         ApplySecretKey(request, secretKey);
 
@@ -38,14 +43,14 @@ public sealed partial class SupabaseAuthAdminService(
         }
         catch (HttpRequestException exception)
         {
-            LogAuthAdminCallFailed(logger, exception, "invite");
+            LogAuthAdminCallFailed(logger, exception, "create");
             throw new AuthServiceUnavailableException("The identity provider is unavailable.");
         }
         catch (OperationCanceledException exception) when (!cancellationToken.IsCancellationRequested)
         {
             // The caller did not cancel: this is HttpClient's own request timeout
             // (TaskCanceledException wrapping a TimeoutException), not a client disconnect.
-            LogAuthAdminCallFailed(logger, exception, "invite");
+            LogAuthAdminCallFailed(logger, exception, "create");
             throw new AuthServiceUnavailableException("The identity provider is unavailable.");
         }
 
@@ -58,24 +63,24 @@ public sealed partial class SupabaseAuthAdminService(
                 // status. The response body is never logged: it may contain the submitted email.
                 // `error_code` itself is a stable enum-like string (e.g. "captcha_failed",
                 // "validation_failed"), not PII, and is the one piece of information that lets
-                // whoever is on call tell apart "Supabase CAPTCHA protection is on and rejects
-                // this server-to-server call" from a genuine misconfiguration - previously it was
-                // parsed only to check for the "already exists" case and silently dropped
-                // otherwise, so every other rejection reason was indistinguishable in the logs.
+                // whoever is on call tell apart a genuine misconfiguration from something like
+                // rate limiting - previously it was parsed only to check for the "already exists"
+                // case and silently dropped otherwise, so every other rejection reason was
+                // indistinguishable in the logs.
                 string? errorCode = await TryReadErrorCodeAsync(response, cancellationToken);
                 if (errorCode is "email_exists" or "user_already_exists")
                 {
                     throw new ConflictException("A user with this email already exists.");
                 }
 
-                LogAuthAdminCallRejected(logger, "invite", (int)response.StatusCode, errorCode ?? "unknown", CorrelationId);
-                throw new AuthServiceException("The identity provider rejected the invitation.");
+                LogAuthAdminCallRejected(logger, "create", (int)response.StatusCode, errorCode ?? "unknown", CorrelationId);
+                throw new AuthServiceException("The identity provider rejected the request.");
             }
 
-            InviteUserResponse? body;
+            CreateUserResponse? body;
             try
             {
-                body = await response.Content.ReadFromJsonAsync<InviteUserResponse>(cancellationToken);
+                body = await response.Content.ReadFromJsonAsync<CreateUserResponse>(cancellationToken);
             }
             catch (JsonException)
             {
@@ -84,7 +89,7 @@ public sealed partial class SupabaseAuthAdminService(
 
             if (body is null || body.Id == Guid.Empty)
             {
-                LogAuthAdminCallRejected(logger, "invite", (int)response.StatusCode, "unexpected_response_shape", CorrelationId);
+                LogAuthAdminCallRejected(logger, "create", (int)response.StatusCode, "unexpected_response_shape", CorrelationId);
                 throw new AuthServiceException("The identity provider returned an unexpected response.");
             }
 
@@ -185,14 +190,6 @@ public sealed partial class SupabaseAuthAdminService(
         return true;
     }
 
-    private Uri BuildInviteUri()
-    {
-        string? redirectUrl = options.Value.DoctorInviteRedirectUrl;
-        return string.IsNullOrWhiteSpace(redirectUrl)
-            ? new Uri("invite", UriKind.Relative)
-            : new Uri($"invite?redirect_to={Uri.EscapeDataString(redirectUrl)}", UriKind.Relative);
-    }
-
     [LoggerMessage(
         EventId = 2000,
         Level = LogLevel.Error,
@@ -223,15 +220,21 @@ public sealed partial class SupabaseAuthAdminService(
         Message = "Compensation for user {UserId} skipped: identity provider not configured (trace {TraceId})")]
     private static partial void LogCompensationSkipped(ILogger logger, Guid userId, string traceId);
 
-    private sealed record InviteUserRequest(
+    // `password` has no [property: JsonPropertyName] rename needed (System.Text.Json defaults to
+    // the record's declared name), but it must never be logged - unlike `error_code`, it is
+    // genuinely sensitive, which is why it only ever appears inside JsonContent sent over HTTPS,
+    // never in a log statement.
+    private sealed record CreateUserRequest(
         [property: JsonPropertyName("email")] string Email,
-        [property: JsonPropertyName("data")] InviteUserMetadata Data);
+        [property: JsonPropertyName("password")] string Password,
+        [property: JsonPropertyName("email_confirm")] bool EmailConfirm,
+        [property: JsonPropertyName("user_metadata")] CreateUserMetadata UserMetadata);
 
-    private sealed record InviteUserMetadata(
+    private sealed record CreateUserMetadata(
         [property: JsonPropertyName("first_name")] string FirstName,
         [property: JsonPropertyName("last_name")] string LastName);
 
-    private sealed record InviteUserResponse([property: JsonPropertyName("id")] Guid Id);
+    private sealed record CreateUserResponse([property: JsonPropertyName("id")] Guid Id);
 
     private sealed record SupabaseErrorBody(
         [property: JsonPropertyName("error_code")] string? ErrorCode);

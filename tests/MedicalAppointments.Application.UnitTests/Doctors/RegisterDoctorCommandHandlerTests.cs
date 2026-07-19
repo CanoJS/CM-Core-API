@@ -11,7 +11,7 @@ namespace MedicalAppointments.Application.UnitTests.Doctors;
 public sealed class RegisterDoctorCommandHandlerTests
 {
     private static readonly Guid SpecialtyId = Guid.NewGuid();
-    private static readonly Guid InvitedUserId = Guid.NewGuid();
+    private static readonly Guid CreatedUserId = Guid.NewGuid();
 
     [Fact]
     public async Task Handle_WhenAdminAndRequestIsValid_RegistersDoctor()
@@ -24,13 +24,14 @@ public sealed class RegisterDoctorCommandHandlerTests
             authAdminService: authAdminService);
 
         RegisterDoctorResponse response = await handler.Handle(
-            new RegisterDoctorCommand("  Ana  ", "  López  ", "  ANA@EXAMPLE.COM  ", SpecialtyId),
+            new RegisterDoctorCommand("  Ana  ", "  López  ", "  ANA@EXAMPLE.COM  ", SpecialtyId, "Doctor123456!"),
             CancellationToken.None);
 
         Assert.Equal("Ana", response.FirstName);
-        Assert.Equal("ana@example.com", authAdminService.LastInviteEmail);
+        Assert.Equal("ana@example.com", authAdminService.LastEmail);
+        Assert.Equal("Doctor123456!", authAdminService.LastPassword);
         Assert.NotNull(doctorRepository.Added);
-        Assert.Equal(InvitedUserId, doctorRepository.Added.UserId);
+        Assert.Equal(CreatedUserId, doctorRepository.Added.UserId);
         Assert.False(authAdminService.DeleteCalled);
     }
 
@@ -41,7 +42,7 @@ public sealed class RegisterDoctorCommandHandlerTests
 
         await Assert.ThrowsAsync<ForbiddenException>(() =>
             handler.Handle(
-                new RegisterDoctorCommand("Ana", "López", "ana@example.com", SpecialtyId),
+                new RegisterDoctorCommand("Ana", "López", "ana@example.com", SpecialtyId, "Doctor123456!"),
                 CancellationToken.None));
     }
 
@@ -55,7 +56,7 @@ public sealed class RegisterDoctorCommandHandlerTests
 
         await Assert.ThrowsAsync<ArgumentException>(() =>
             handler.Handle(
-                new RegisterDoctorCommand(firstName, lastName, "ana@example.com", SpecialtyId),
+                new RegisterDoctorCommand(firstName, lastName, "ana@example.com", SpecialtyId, "Doctor123456!"),
                 CancellationToken.None));
     }
 
@@ -66,7 +67,7 @@ public sealed class RegisterDoctorCommandHandlerTests
 
         await Assert.ThrowsAsync<ArgumentException>(() =>
             handler.Handle(
-                new RegisterDoctorCommand("Ana", "López", "not-an-email", SpecialtyId),
+                new RegisterDoctorCommand("Ana", "López", "not-an-email", SpecialtyId, "Doctor123456!"),
                 CancellationToken.None));
     }
 
@@ -77,7 +78,20 @@ public sealed class RegisterDoctorCommandHandlerTests
 
         await Assert.ThrowsAsync<ArgumentException>(() =>
             handler.Handle(
-                new RegisterDoctorCommand("Ana", "López", "ana@example.com", Guid.Empty),
+                new RegisterDoctorCommand("Ana", "López", "ana@example.com", Guid.Empty, "Doctor123456!"),
+                CancellationToken.None));
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("short1!")]
+    public async Task Handle_WithInvalidTemporaryPassword_ThrowsArgumentException(string temporaryPassword)
+    {
+        var handler = CreateHandler(UserRole.Admin);
+
+        await Assert.ThrowsAsync<ArgumentException>(() =>
+            handler.Handle(
+                new RegisterDoctorCommand("Ana", "López", "ana@example.com", SpecialtyId, temporaryPassword),
                 CancellationToken.None));
     }
 
@@ -88,7 +102,7 @@ public sealed class RegisterDoctorCommandHandlerTests
 
         await Assert.ThrowsAsync<NotFoundException>(() =>
             handler.Handle(
-                new RegisterDoctorCommand("Ana", "López", "ana@example.com", SpecialtyId),
+                new RegisterDoctorCommand("Ana", "López", "ana@example.com", SpecialtyId, "Doctor123456!"),
                 CancellationToken.None));
     }
 
@@ -101,12 +115,12 @@ public sealed class RegisterDoctorCommandHandlerTests
 
         await Assert.ThrowsAsync<ConflictException>(() =>
             handler.Handle(
-                new RegisterDoctorCommand("Ana", "López", "ana@example.com", SpecialtyId),
+                new RegisterDoctorCommand("Ana", "López", "ana@example.com", SpecialtyId, "Doctor123456!"),
                 CancellationToken.None));
     }
 
     [Fact]
-    public async Task Handle_WhenEmailAlreadyExists_ThrowsConflictWithoutInviting()
+    public async Task Handle_WhenEmailAlreadyExists_ThrowsConflictWithoutCreatingUser()
     {
         var authAdminService = new AuthAdminServiceStub();
         var handler = CreateHandler(
@@ -116,24 +130,24 @@ public sealed class RegisterDoctorCommandHandlerTests
 
         await Assert.ThrowsAsync<ConflictException>(() =>
             handler.Handle(
-                new RegisterDoctorCommand("Ana", "López", "ana@example.com", SpecialtyId),
+                new RegisterDoctorCommand("Ana", "López", "ana@example.com", SpecialtyId, "Doctor123456!"),
                 CancellationToken.None));
 
-        Assert.False(authAdminService.InviteCalled);
+        Assert.False(authAdminService.CreateCalled);
     }
 
     [Fact]
-    public async Task Handle_WhenAuthAdminServiceRejectsInvite_PropagatesWithoutCompensating()
+    public async Task Handle_WhenAuthAdminServiceRejectsCreation_PropagatesWithoutCompensating()
     {
         var authAdminService = new AuthAdminServiceStub
         {
-            InviteException = new AuthServiceException("The identity provider rejected the invitation."),
+            CreateException = new AuthServiceException("The identity provider rejected the invitation."),
         };
         var handler = CreateHandler(UserRole.Admin, authAdminService: authAdminService);
 
         await Assert.ThrowsAsync<AuthServiceException>(() =>
             handler.Handle(
-                new RegisterDoctorCommand("Ana", "López", "ana@example.com", SpecialtyId),
+                new RegisterDoctorCommand("Ana", "López", "ana@example.com", SpecialtyId, "Doctor123456!"),
                 CancellationToken.None));
 
         Assert.False(authAdminService.DeleteCalled);
@@ -144,18 +158,18 @@ public sealed class RegisterDoctorCommandHandlerTests
     {
         var authAdminService = new AuthAdminServiceStub
         {
-            InviteException = new AuthServiceUnavailableException("The identity provider is not configured."),
+            CreateException = new AuthServiceUnavailableException("The identity provider is not configured."),
         };
         var handler = CreateHandler(UserRole.Admin, authAdminService: authAdminService);
 
         await Assert.ThrowsAsync<AuthServiceUnavailableException>(() =>
             handler.Handle(
-                new RegisterDoctorCommand("Ana", "López", "ana@example.com", SpecialtyId),
+                new RegisterDoctorCommand("Ana", "López", "ana@example.com", SpecialtyId, "Doctor123456!"),
                 CancellationToken.None));
     }
 
     [Fact]
-    public async Task Handle_WhenPostgresFailsAfterInvite_CompensatesAndRethrowsOriginal()
+    public async Task Handle_WhenPostgresFailsAfterCreate_CompensatesAndRethrowsOriginal()
     {
         var authAdminService = new AuthAdminServiceStub();
         var handler = CreateHandler(
@@ -165,11 +179,11 @@ public sealed class RegisterDoctorCommandHandlerTests
 
         await Assert.ThrowsAsync<ConflictException>(() =>
             handler.Handle(
-                new RegisterDoctorCommand("Ana", "López", "ana@example.com", SpecialtyId),
+                new RegisterDoctorCommand("Ana", "López", "ana@example.com", SpecialtyId, "Doctor123456!"),
                 CancellationToken.None));
 
         Assert.True(authAdminService.DeleteCalled);
-        Assert.Equal(InvitedUserId, authAdminService.DeletedUserId);
+        Assert.Equal(CreatedUserId, authAdminService.DeletedUserId);
     }
 
     [Fact]
@@ -186,7 +200,7 @@ public sealed class RegisterDoctorCommandHandlerTests
 
         ConflictException exception = await Assert.ThrowsAsync<ConflictException>(() =>
             handler.Handle(
-                new RegisterDoctorCommand("Ana", "López", "ana@example.com", SpecialtyId),
+                new RegisterDoctorCommand("Ana", "López", "ana@example.com", SpecialtyId, "Doctor123456!"),
                 CancellationToken.None));
 
         Assert.DoesNotContain("boom", exception.Message, StringComparison.Ordinal);
@@ -194,7 +208,7 @@ public sealed class RegisterDoctorCommandHandlerTests
     }
 
     [Fact]
-    public async Task Handle_WhenInvitedProfileWasNotProvisioned_CompensatesAndThrows()
+    public async Task Handle_WhenCreatedProfileWasNotProvisioned_CompensatesAndThrows()
     {
         var authAdminService = new AuthAdminServiceStub();
         var handler = CreateHandler(
@@ -204,14 +218,14 @@ public sealed class RegisterDoctorCommandHandlerTests
 
         await Assert.ThrowsAsync<InvalidOperationException>(() =>
             handler.Handle(
-                new RegisterDoctorCommand("Ana", "López", "ana@example.com", SpecialtyId),
+                new RegisterDoctorCommand("Ana", "López", "ana@example.com", SpecialtyId, "Doctor123456!"),
                 CancellationToken.None));
 
         Assert.True(authAdminService.DeleteCalled);
     }
 
     [Fact]
-    public async Task Handle_WhenSpecialtyBecameInactiveAfterInvite_CompensatesAndThrowsConflict()
+    public async Task Handle_WhenSpecialtyBecameInactiveAfterCreate_CompensatesAndThrowsConflict()
     {
         var initialSpecialty = new Specialty(SpecialtyId, "Pediatría");
         var lockedSpecialty = new Specialty(SpecialtyId, "Pediatría");
@@ -225,18 +239,18 @@ public sealed class RegisterDoctorCommandHandlerTests
 
         await Assert.ThrowsAsync<ConflictException>(() =>
             handler.Handle(
-                new RegisterDoctorCommand("Ana", "López", "ana@example.com", SpecialtyId),
+                new RegisterDoctorCommand("Ana", "López", "ana@example.com", SpecialtyId, "Doctor123456!"),
                 CancellationToken.None));
 
         Assert.True(authAdminService.DeleteCalled);
-        Assert.Equal(InvitedUserId, authAdminService.DeletedUserId);
+        Assert.Equal(CreatedUserId, authAdminService.DeletedUserId);
     }
 
     [Fact]
-    public async Task Handle_WhenOriginalTokenIsCancelledAfterInvite_CompensationUsesUsableToken()
+    public async Task Handle_WhenOriginalTokenIsCancelledAfterCreate_CompensationUsesUsableToken()
     {
         using var cts = new CancellationTokenSource();
-        var authAdminService = new AuthAdminServiceStub { CancelAfterInvite = cts };
+        var authAdminService = new AuthAdminServiceStub { CancelAfterCreate = cts };
         var handler = CreateHandler(
             UserRole.Admin,
             authAdminService: authAdminService,
@@ -244,7 +258,7 @@ public sealed class RegisterDoctorCommandHandlerTests
 
         await Assert.ThrowsAsync<OperationCanceledException>(() =>
             handler.Handle(
-                new RegisterDoctorCommand("Ana", "López", "ana@example.com", SpecialtyId),
+                new RegisterDoctorCommand("Ana", "López", "ana@example.com", SpecialtyId, "Doctor123456!"),
                 cts.Token));
 
         Assert.True(authAdminService.DeleteCalled);
@@ -269,7 +283,7 @@ public sealed class RegisterDoctorCommandHandlerTests
             new CurrentUserStub(role),
             new SpecialtyRepositoryStub(specialty, lockedSpecialty),
             userProfileRepository ?? new UserProfileRepositoryStub(
-                profile: new UserProfile(InvitedUserId, "Ana", "López", "ana@example.com", UserRole.Patient),
+                profile: new UserProfile(CreatedUserId, "Ana", "López", "ana@example.com", UserRole.Patient),
                 exists: emailExists),
             doctorRepository ?? new DoctorRepositoryStub(),
             authAdminService ?? new AuthAdminServiceStub(),
@@ -337,39 +351,43 @@ public sealed class RegisterDoctorCommandHandlerTests
 
     private sealed class AuthAdminServiceStub : IAuthAdminService
     {
-        public Exception? InviteException { get; set; }
+        public Exception? CreateException { get; set; }
 
         public Exception? DeleteException { get; set; }
 
-        public bool InviteCalled { get; private set; }
+        public bool CreateCalled { get; private set; }
 
         public bool DeleteCalled { get; private set; }
 
         public Guid? DeletedUserId { get; private set; }
 
-        public string? LastInviteEmail { get; private set; }
+        public string? LastEmail { get; private set; }
+
+        public string? LastPassword { get; private set; }
 
         public CancellationToken? DeleteCancellationToken { get; private set; }
 
         // Simulates a client disconnecting/timing out right after Supabase finishes creating
         // the user but before the local transaction commits.
-        public CancellationTokenSource? CancelAfterInvite { get; set; }
+        public CancellationTokenSource? CancelAfterCreate { get; set; }
 
-        public Task<Guid> InviteDoctorAsync(
+        public Task<Guid> CreateDoctorUserAsync(
             string email,
             string firstName,
             string lastName,
+            string password,
             CancellationToken cancellationToken)
         {
-            InviteCalled = true;
-            LastInviteEmail = email;
-            if (InviteException is not null)
+            CreateCalled = true;
+            LastEmail = email;
+            LastPassword = password;
+            if (CreateException is not null)
             {
-                return Task.FromException<Guid>(InviteException);
+                return Task.FromException<Guid>(CreateException);
             }
 
-            CancelAfterInvite?.Cancel();
-            return Task.FromResult(InvitedUserId);
+            CancelAfterCreate?.Cancel();
+            return Task.FromResult(CreatedUserId);
         }
 
         public Task DeleteUserAsync(Guid userId, CancellationToken cancellationToken)

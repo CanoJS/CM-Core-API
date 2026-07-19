@@ -25,18 +25,22 @@ dotnet user-secrets set "ConnectionStrings:Database" "<connection-string>" --pro
 dotnet user-secrets set "Supabase:ProjectUrl" "https://<project-ref>.supabase.co" --project src/MedicalAppointments.Api
 ```
 
-El alta administrativa de médicos (`POST /api/v1/admin/doctors`) invita usuarios mediante
-Supabase Auth Admin y requiere además:
+El alta administrativa de médicos (`POST /api/v1/admin/doctors`) crea el usuario directamente en
+Supabase Auth Admin (`POST /auth/v1/admin/users`, ya confirmado con `email_confirm: true`, sin
+enviar correo de invitación) y requiere además:
 
 ```powershell
 dotnet user-secrets set "Supabase:SecretKey" "<secret-key>" --project src/MedicalAppointments.Api
-dotnet user-secrets set "Supabase:DoctorInviteRedirectUrl" "<url-de-redireccion>" --project src/MedicalAppointments.Api
 ```
 
 `Supabase:SecretKey` es opcional al iniciar la API: sin ella, todos los demás endpoints
 funcionan con normalidad y solo el alta de médicos responde `503` hasta que se configure.
-`Supabase:DoctorInviteRedirectUrl` es opcional; si falta, Supabase usa la Site URL configurada
-en el proyecto.
+
+El request requiere `temporaryPassword` (mínimo 8 caracteres) — es la contraseña con la que el
+médico inicia sesión de inmediato; no se envía ningún correo. Se eligió creación directa en vez
+de la invitación por correo de Supabase (`POST /auth/v1/invite`) porque esa ruta está sujeta a
+`over_email_send_rate_limit` de Supabase, lo que volvía poco confiable el alta de médicos en
+lote/demo para este MVP.
 
 ## Disponibilidad de médicos
 
@@ -247,8 +251,7 @@ desde fases anteriores:
 | `ASPNETCORE_URLS` | No | Ya fijada en el Dockerfile (`http://+:8080`); solo si necesitas otro puerto. |
 | `ConnectionStrings__Database` | **Sí** | Cadena de conexión a Postgres de Supabase. Incluir `SSL Mode=Require` (Supabase exige TLS fuera de la red interna de Docker local). |
 | `Supabase__ProjectUrl` | **Sí** | `https://<project-ref>.supabase.co`. También se usa para derivar el `issuer` del JWT (`{ProjectUrl}/auth/v1`) — no hay una variable `JwtIssuer` separada. La audiencia (`authenticated`) es una constante fija de Supabase, tampoco configurable. |
-| `Supabase__SecretKey` | No | Habilita `POST /api/v1/admin/doctors` (invitar médicos). Sin ella, ese único endpoint responde `503`; el resto de la API funciona. Acepta clave moderna `sb_secret_...` o `service_role` legacy. |
-| `Supabase__DoctorInviteRedirectUrl` | No | Si falta, Supabase usa la Site URL del proyecto. |
+| `Supabase__SecretKey` | No | Habilita `POST /api/v1/admin/doctors` (alta directa de médicos, sin correo). Sin ella, ese único endpoint responde `503`; el resto de la API funciona. Acepta clave moderna `sb_secret_...` o `service_role` legacy. |
 | `Clinic__TimeZone` | No | Por defecto `America/Mexico_City`. |
 | `Cors__AllowedOrigins__0`, `Cors__AllowedOrigins__1`, ... | **Sí** (si hay frontend), salvo que uses `Cors__AllowAnyOrigin=true` | Orígenes exactos de Angular/Flutter-web en producción. Sin esto, CORS bloquea todo origen (lista vacía por defecto). Ejemplo: `Cors__AllowedOrigins__0=https://front.example.com`. |
 | `Cors__AllowAnyOrigin` | No | **Solo para demo/MVP** — ver advertencia abajo. Por defecto `false`, usa `Cors__AllowedOrigins`. |

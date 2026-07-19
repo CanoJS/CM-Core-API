@@ -34,6 +34,7 @@ public sealed class RegisterDoctorCommandHandler(
         string firstName = ValidateName(command.FirstName, "First name");
         string lastName = ValidateName(command.LastName, "Last name");
         string email = ValidateEmail(command.Email);
+        string temporaryPassword = ValidatePassword(command.TemporaryPassword);
 
         if (command.SpecialtyId == Guid.Empty)
         {
@@ -53,26 +54,28 @@ public sealed class RegisterDoctorCommandHandler(
             throw new ConflictException("A user with this email already exists.");
         }
 
-        Guid invitedUserId = await authAdminService.InviteDoctorAsync(
+        Guid createdUserId = await authAdminService.CreateDoctorUserAsync(
             email,
             firstName,
             lastName,
+            temporaryPassword,
             cancellationToken);
 
         try
         {
-            UserProfile profile = await userProfileRepository.GetByIdAsync(invitedUserId, cancellationToken)
+            UserProfile profile = await userProfileRepository.GetByIdAsync(createdUserId, cancellationToken)
                 ?? throw new InvalidOperationException(
-                    "The invited user profile was not provisioned by the signup trigger.");
+                    "The created user profile was not provisioned by the signup trigger.");
 
             await using IUnitOfWorkTransaction transaction =
                 await unitOfWork.BeginTransactionAsync(cancellationToken);
 
             // ux_doctors_user_id is the definitive guard against double-registering the same
-            // invited user, but it says nothing about the specialty's active flag. Supabase
-            // invitation is a network round-trip, so another admin can deactivate the specialty
-            // between the check above and this point; re-read it under a row lock so that race
-            // is either serialized against us or caught here instead of silently persisted.
+            // created user, but it says nothing about the specialty's active flag. The Supabase
+            // Auth Admin call is a network round-trip, so another admin can deactivate the
+            // specialty between the check above and this point; re-read it under a row lock so
+            // that race is either serialized against us or caught here instead of silently
+            // persisted.
             Specialty lockedSpecialty =
                 await specialtyRepository.GetByIdForUpdateAsync(command.SpecialtyId, cancellationToken)
                     ?? throw new NotFoundException("The specialty does not exist.");
@@ -84,7 +87,7 @@ public sealed class RegisterDoctorCommandHandler(
 
             profile.PromoteToDoctor();
 
-            var doctor = new Doctor(Guid.NewGuid(), invitedUserId, lockedSpecialty.Id);
+            var doctor = new Doctor(Guid.NewGuid(), createdUserId, lockedSpecialty.Id);
             doctorRepository.Add(doctor);
 
             await unitOfWork.SaveChangesAsync(cancellationToken);
@@ -102,24 +105,24 @@ public sealed class RegisterDoctorCommandHandler(
         }
         catch (Exception)
         {
-            await CompensateAsync(invitedUserId);
+            await CompensateAsync(createdUserId);
             throw;
         }
     }
 
-    private async Task CompensateAsync(Guid invitedUserId)
+    private async Task CompensateAsync(Guid createdUserId)
     {
         // `cancellationToken` from the original request may already be cancelled (client
         // disconnect, request timeout) by the time we get here, which would make DeleteUserAsync
         // a guaranteed no-op right when it's needed most. Compensation runs on its own bounded
         // token instead, independent of the caller's, so a cancelled or failed request still
-        // revokes the Supabase invitation. A compensation failure must never mask the original
-        // persistence/validation error, so it is swallowed here; DeleteUserAsync already logs it
-        // with structured, secret-free fields.
+        // deletes the Supabase Auth user just created. A compensation failure must never mask
+        // the original persistence/validation error, so it is swallowed here; DeleteUserAsync
+        // already logs it with structured, secret-free fields.
         using var compensationCts = new CancellationTokenSource(CompensationTimeout);
         try
         {
-            await authAdminService.DeleteUserAsync(invitedUserId, compensationCts.Token);
+            await authAdminService.DeleteUserAsync(createdUserId, compensationCts.Token);
         }
         catch
         {
@@ -134,6 +137,16 @@ public sealed class RegisterDoctorCommandHandler(
         }
 
         return name.Trim();
+    }
+
+    private static string ValidatePassword(string password)
+    {
+        if (string.IsNullOrEmpty(password) || password.Length < 8)
+        {
+            throw new ArgumentException("Temporary password is required and must be at least 8 characters long.");
+        }
+
+        return password;
     }
 
     private static string ValidateEmail(string email)

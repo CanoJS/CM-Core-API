@@ -7,7 +7,8 @@ public sealed record RegisterDoctorCommand(
     string FirstName,
     string LastName,
     string Email,
-    Guid SpecialtyId) : ICommand<RegisterDoctorResponse>;
+    Guid SpecialtyId,
+    string TemporaryPassword) : ICommand<RegisterDoctorResponse>;
 
 public sealed record RegisterDoctorResponse(
     Guid Id,
