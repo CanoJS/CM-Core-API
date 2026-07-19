@@ -224,8 +224,13 @@ $env:RUN_REAL_DB_TESTS = "true"
 dotnet test MedicalAppointments.slnx --no-build --no-restore
 ```
 
-Requieren `ConnectionStrings:Database` configurada localmente; se ejecutan dentro de
-transacciones revertidas y nunca crean usuarios reales de Supabase Auth.
+Requieren `ConnectionStrings:Database` configurada localmente (apuntando al stack de Supabase
+local levantado con `npx supabase@2.109.1 start`, nunca a un proyecto Supabase alojado); se
+ejecutan dentro de transacciones revertidas y nunca crean usuarios reales de Supabase Auth. Los
+readers con `JOIN` a través de `medical.doctors`/`medical.user_profiles` (que encadenan a
+`auth.users`) satisfacen esa FK insertando una fila de `auth.users` con la misma transacción que
+se revierte al final (`RealDatabaseSeeding` en `tests/MedicalAppointments.IntegrationTests`) — no
+se llama a la API de administración de Supabase Auth, y nada persiste.
 
 ## Integración de frontends
 
