@@ -131,6 +131,19 @@ bool openApiEnabled = app.Environment.IsDevelopment()
 if (openApiEnabled)
 {
     app.MapOpenApi().AllowAnonymous();
+
+    // Swagger UI here is UI-only middleware (Swashbuckle.AspNetCore.SwaggerUI), not an endpoint,
+    // so it is never subject to the fallback "authenticated user required" policy the way
+    // MapOpenApi's endpoint is - registering it before UseAuthentication/UseAuthorization keeps
+    // that true regardless of routing internals. It points at the /openapi/v1.json document
+    // mapped above instead of generating its own: the project intentionally has no Swashbuckle
+    // document generator, only Microsoft.AspNetCore.OpenApi, to avoid two competing sources of
+    // the OpenAPI document.
+    app.UseSwaggerUI(options =>
+    {
+        options.SwaggerEndpoint("/openapi/v1.json", "MedicalAppointments API v1");
+        options.RoutePrefix = "swagger";
+    });
 }
 
 app.UseExceptionHandler();

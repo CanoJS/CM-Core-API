@@ -139,4 +139,46 @@ public sealed class HealthEndpointTests : IClassFixture<WebApplicationFactory<Pr
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
+
+    [Fact]
+    public async Task SwaggerUi_InProductionByDefault_IsNotExposed()
+    {
+        await using var factory = new WebApplicationFactory<Program>();
+        using HttpClient productionClient = factory
+            .WithWebHostBuilder(builder =>
+            {
+                builder.UseEnvironment("Production");
+                builder.ConfigureLogging(logging => logging.ClearProviders());
+            })
+            .CreateClient();
+
+        HttpResponseMessage response = await productionClient.GetAsync("/swagger/index.html", CancellationToken.None);
+
+        // Swashbuckle's UseSwaggerUI middleware is only registered when OpenApi:Enabled is on
+        // (or in Development), so this route is unmatched here - same fallback-policy caveat as
+        // OpenApiDocument_InProductionByDefault_IsNotExposed: the UI is never served either way.
+        Assert.NotEqual(HttpStatusCode.OK, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task SwaggerUi_InProductionWithOpenApiEnabledFlag_IsExposedWithoutAuth()
+    {
+        await using var factory = new WebApplicationFactory<Program>();
+        using HttpClient enabledClient = factory
+            .WithWebHostBuilder(builder =>
+            {
+                builder.UseEnvironment("Production");
+                builder.ConfigureLogging(logging => logging.ClearProviders());
+                builder.ConfigureAppConfiguration((_, configBuilder) =>
+                    configBuilder.AddInMemoryCollection(new Dictionary<string, string?>
+                    {
+                        ["OpenApi:Enabled"] = "true",
+                    }));
+            })
+            .CreateClient();
+
+        HttpResponseMessage response = await enabledClient.GetAsync("/swagger/index.html", CancellationToken.None);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+    }
 }

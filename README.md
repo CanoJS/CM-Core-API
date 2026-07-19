@@ -287,16 +287,21 @@ $env:Cors__AllowedOrigins__0 = "https://front.example.com"
 
 ### Habilitar OpenAPI temporalmente (demo)
 
-`GET /openapi/v1.json` (documento OpenAPI puro; no incluye una UI de Swagger interactiva — el
-proyecto solo referencia `Microsoft.AspNetCore.OpenApi`, no Swashbuckle) solo se expone
-automáticamente cuando `ASPNETCORE_ENVIRONMENT=Development`. Para una demo en App Runner sin
-cambiar el ambiente completo (que también activaría páginas de error detalladas), se agregó un
-flag angosto:
+`GET /openapi/v1.json` (documento generado por `Microsoft.AspNetCore.OpenApi`) y la UI visual de
+Swagger en `GET /swagger` (paquete `Swashbuckle.AspNetCore.SwaggerUI`, solo la UI — apunta al
+mismo documento en vez de generar uno propio) solo se exponen automáticamente cuando
+`ASPNETCORE_ENVIRONMENT=Development`. Para una demo en App Runner sin cambiar el ambiente
+completo (que también activaría páginas de error detalladas), se agregó un flag angosto:
 
 ```powershell
 # En la consola de App Runner, o localmente:
 $env:OpenApi__Enabled = "true"
 ```
+
+Con el flag activo, `/swagger` (redirige a `/swagger/index.html`) abre la UI sin autenticación —
+igual que `/openapi/v1.json`, es middleware anterior a `UseAuthentication`/`UseAuthorization`, no
+un endpoint sujeto a la política de autenticación por defecto. El resto de la API (`/api/v1/*`)
+no se ve afectado; su autenticación/autorización no cambia.
 
 Quitar la variable (o ponerla en `false`) para volver a ocultar el documento después de la demo.
 
