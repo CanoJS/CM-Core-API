@@ -157,6 +157,14 @@ lectura de notas médicas deberá generar auditoría".
 `from`/`to` (`YYYY-MM-DD`, interpretados en `America/Mexico_City`; `to < from` o rango mayor a
 366 fechas inclusivas → `400`).
 
+`GET /` también acepta `patientName` (coincidencia parcial e insensible a mayúsculas/minúsculas
+contra el nombre completo del paciente, vía `ILIKE`). Este parámetro solo tiene efecto para un
+DOCTOR autenticado — permite buscar en su propio historial de citas (pasadas y futuras, con
+estado y `medicalNote` según las mismas reglas de arriba) por nombre de paciente; un DOCTOR nunca
+ve citas de otro médico aunque el nombre coincida, porque el filtro se aplica sobre el conjunto ya
+acotado a sus propias citas. Si un PATIENT o ADMIN lo envían, se ignora sin cambiar su
+comportamiento habitual.
+
 ### Idempotencia en la creación de citas
 
 `POST /` acepta un header opcional `Idempotency-Key` (máx. 200 caracteres). Con la misma clave y
@@ -178,6 +186,21 @@ curl -X POST https://localhost:.../api/v1/appointments `
   -H "Content-Type: application/json" `
   -d '{"doctorId":"...","startsAt":"2026-07-20T15:00:00Z","reason":"Consulta general"}'
 ```
+
+## Dashboard administrativo
+
+`GET /api/v1/admin/dashboard` — solo ADMIN (`401` sin token, `403` para PATIENT/DOCTOR).
+
+```jsonc
+{
+  "scheduledToday": 3
+}
+```
+
+`scheduledToday` cuenta únicamente citas en estado `SCHEDULED` (excluye `ATTENDED` y
+`CANCELLED`) cuyo `startsAt` cae en el día calendario **local de la clínica** (`Clinic:TimeZone`,
+por defecto `America/Mexico_City`), calculado a partir de `IClock` — nunca de un offset fijo ni de
+`DateTime.UtcNow` directo, igual que el resto del proyecto.
 
 ## Validación
 
@@ -221,10 +244,13 @@ request/response bodies y códigos de error):
 - **Catálogo:** `GET /api/v1/specialties`, `GET /api/v1/doctors` (requieren JWT, como el resto de
   la API).
 - **Disponibilidad:** `GET /api/v1/doctors/{doctorId}/availability`.
-- **Citas:** `POST /api/v1/appointments`, `GET /api/v1/appointments`, `GET /api/v1/appointments/{id}`,
+- **Citas:** `POST /api/v1/appointments`, `GET /api/v1/appointments` (filtros opcionales
+  `status`, `from`, `to`, y `patientName` — este último solo tiene efecto para DOCTOR, ver
+  "Ciclo de vida de citas"), `GET /api/v1/appointments/{id}`,
   `PATCH /api/v1/appointments/{id}/cancel`, `PATCH /api/v1/appointments/{id}/reschedule`,
   `PATCH /api/v1/appointments/{id}/attend`.
-- **Admin:** `POST /api/v1/admin/doctors` (alta directa de médicos).
+- **Admin:** `POST /api/v1/admin/doctors` (alta directa de médicos),
+  `GET /api/v1/admin/dashboard` (ver "Dashboard administrativo").
 - **Sesión actual:** `GET /api/v1/users/me`.
 
 ## Deploy en Azure App Service
