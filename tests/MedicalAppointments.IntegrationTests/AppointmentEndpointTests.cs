@@ -152,6 +152,66 @@ public sealed class AppointmentEndpointTests
     }
 
     [Fact]
+    public async Task GetMyAppointments_AsDoctorWithPatientNameFilter_ReturnsOnlyMatchingOwnAppointments()
+    {
+        Fixture fixture = BuildFixture();
+        Guid matching = fixture.Appointments.SeedScheduled(PatientId, DoctorId, FutureSlot);
+        fixture.Appointments.SeedScheduled(OtherPatientId, DoctorId, FutureSlot.AddDays(1));
+        fixture.Appointments.SeedScheduled(PatientId, OtherDoctorId, FutureSlot.AddDays(2));
+        using HttpClient client = CreateAuthenticatedClient("DOCTOR", DoctorUserId, fixture);
+
+        HttpResponseMessage response = await client.GetAsync(
+            "/api/v1/appointments?patientName=ana",
+            CancellationToken.None);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using JsonDocument body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        JsonElement item = Assert.Single(body.RootElement.EnumerateArray());
+        Assert.Equal(matching.ToString(), item.GetProperty("id").GetString());
+    }
+
+    [Fact]
+    public async Task GetMyAppointments_AsDoctorWithPatientNameFilter_IncludesMedicalNoteFromPastAttendedAppointment()
+    {
+        Fixture fixture = BuildFixture();
+        DateTimeOffset pastSlot = ClockNow.AddHours(-3);
+        Guid attendedId = fixture.Appointments.SeedAttended(
+            PatientId,
+            DoctorId,
+            pastSlot,
+            "Paciente estable, sin hallazgos.");
+        using HttpClient client = CreateAuthenticatedClient("DOCTOR", DoctorUserId, fixture);
+
+        HttpResponseMessage response = await client.GetAsync(
+            "/api/v1/appointments?patientName=ana",
+            CancellationToken.None);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using JsonDocument body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        JsonElement item = Assert.Single(body.RootElement.EnumerateArray());
+        Assert.Equal(attendedId.ToString(), item.GetProperty("id").GetString());
+        Assert.Equal("ATTENDED", item.GetProperty("status").GetString());
+        Assert.Equal("Paciente estable, sin hallazgos.", item.GetProperty("medicalNote").GetString());
+    }
+
+    [Fact]
+    public async Task GetMyAppointments_AsPatientWithPatientNameFilter_IgnoresFilter()
+    {
+        Fixture fixture = BuildFixture();
+        Guid ownAppointmentId = fixture.Appointments.SeedScheduled(PatientId, DoctorId, FutureSlot);
+        using HttpClient client = CreateAuthenticatedClient("PATIENT", PatientId, fixture);
+
+        HttpResponseMessage response = await client.GetAsync(
+            "/api/v1/appointments?patientName=no-such-name",
+            CancellationToken.None);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using JsonDocument body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        JsonElement item = Assert.Single(body.RootElement.EnumerateArray());
+        Assert.Equal(ownAppointmentId.ToString(), item.GetProperty("id").GetString());
+    }
+
+    [Fact]
     public async Task GetMyAppointments_WithInvalidStatus_ReturnsBadRequest()
     {
         Fixture fixture = BuildFixture();
@@ -496,6 +556,23 @@ public sealed class AppointmentEndpointTests
             return appointment.Id;
         }
 
+        // Seeds a past, already-ATTENDED appointment (with a medical note) directly through the
+        // domain entity - bypassing the HTTP attend flow entirely - so history/search tests can
+        // assert medicalNote is present without exercising AttendAppointment separately.
+        public Guid SeedAttended(
+            Guid patientId,
+            Guid doctorId,
+            DateTimeOffset startsAt,
+            string medicalNote,
+            uint version = 1)
+        {
+            Appointment appointment = Appointment.Schedule(patientId, doctorId, startsAt, "Control anual", ClockNow.AddDays(-1));
+            appointment.Attend(medicalNote, startsAt.AddMinutes(Appointment.DurationMinutes));
+            appointments[appointment.Id] = appointment;
+            versions[appointment.Id] = version;
+            return appointment.Id;
+        }
+
         public Task<bool> HasScheduledAppointmentAsync(
             Guid doctorId,
             DateTimeOffset startsAt,
@@ -560,6 +637,7 @@ public sealed class AppointmentEndpointTests
             AppointmentStatus? status,
             DateTimeOffset? fromUtc,
             DateTimeOffset? toUtcExclusive,
+            string? patientNameContains,
             CancellationToken cancellationToken)
         {
             IEnumerable<Appointment> query = appointments.Values;
@@ -578,11 +656,26 @@ public sealed class AppointmentEndpointTests
                 query = query.Where(a => a.Status == appointmentStatus);
             }
 
+            if (!string.IsNullOrWhiteSpace(patientNameContains))
+            {
+                query = query.Where(a =>
+                    GetPatientName(a.PatientId).FullName.Contains(
+                        patientNameContains, StringComparison.OrdinalIgnoreCase));
+            }
+
             IReadOnlyList<AppointmentListItem> items = query
                 .OrderBy(a => a.StartsAt)
                 .Select(ToItem)
                 .ToArray();
             return Task.FromResult(items);
+        }
+
+        private static (string FirstName, string LastName, string FullName) GetPatientName(Guid patientId)
+        {
+            (string firstName, string lastName) = patientId == PatientId
+                ? ("Ana", "López")
+                : ("Otra", "Paciente");
+            return (firstName, lastName, $"{firstName} {lastName}");
         }
 
         Task<AppointmentListItem?> IAppointmentReader.GetByIdAsync(Guid appointmentId, CancellationToken cancellationToken) =>
@@ -592,9 +685,7 @@ public sealed class AppointmentEndpointTests
 
         private AppointmentListItem ToItem(Appointment appointment)
         {
-            (string firstName, string lastName) = appointment.PatientId == PatientId
-                ? ("Ana", "López")
-                : ("Otra", "Paciente");
+            (string firstName, string lastName, _) = GetPatientName(appointment.PatientId);
             (string doctorFirstName, string doctorLastName) = appointment.DoctorId == DoctorId
                 ? ("Carlos", "Ruiz")
                 : ("Sofía", "Vega");

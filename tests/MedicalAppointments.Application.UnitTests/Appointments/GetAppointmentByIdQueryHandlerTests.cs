@@ -180,6 +180,7 @@ public sealed class GetAppointmentByIdQueryHandlerTests
             AppointmentStatus? status,
             DateTimeOffset? fromUtc,
             DateTimeOffset? toUtcExclusive,
+            string? patientNameContains,
             CancellationToken cancellationToken) =>
             Task.FromResult<IReadOnlyList<AppointmentListItem>>([]);
 

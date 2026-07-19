@@ -47,6 +47,7 @@ public static class DependencyInjection
         services.AddScoped<IUserProfileRepository, UserProfileRepository>();
         services.AddScoped<IAdminDoctorReader, AdminDoctorReader>();
         services.AddScoped<IAppointmentReader, AppointmentReader>();
+        services.AddScoped<IAdminDashboardReader, AdminDashboardReader>();
         services.AddScoped<IIdempotencyStore, IdempotencyStore>();
         services.AddSingleton<IMedicalNoteAuditLog, MedicalNoteAuditLog>();
         services.AddScoped<IUnitOfWork, UnitOfWork>();

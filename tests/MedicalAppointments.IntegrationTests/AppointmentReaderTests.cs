@@ -52,7 +52,8 @@ public sealed class AppointmentReaderTests
         Guid? doctorId,
         AppointmentStatus? status,
         DateTimeOffset? fromUtc,
-        DateTimeOffset? toUtcExclusive)
+        DateTimeOffset? toUtcExclusive,
+        string? patientNameContains)
     {
         var reader = new AppointmentReader(CreateUnconnectedDbContext());
 
@@ -61,7 +62,7 @@ public sealed class AppointmentReaderTests
         // still contained AddMinutes. A translation failure here would throw before any string
         // is produced, so simply not throwing is the assertion.
         string sql = reader
-            .BuildListQuery(patientId, doctorId, status, fromUtc, toUtcExclusive)
+            .BuildListQuery(patientId, doctorId, status, fromUtc, toUtcExclusive, patientNameContains)
             .ToQueryString();
 
         Assert.Contains("ORDER BY", sql, StringComparison.Ordinal);
@@ -85,6 +86,16 @@ public sealed class AppointmentReaderTests
         string sql = reader.BuildListQuery(null, Guid.NewGuid(), null, null, null).ToQueryString();
 
         Assert.Contains("doctor_id", sql, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void BuildListQuery_WithPatientNameFilter_TranslatesToIlikeInGeneratedSql()
+    {
+        var reader = new AppointmentReader(CreateUnconnectedDbContext());
+
+        string sql = reader.BuildListQuery(null, null, null, null, null, "ana").ToQueryString();
+
+        Assert.Contains("ILIKE", sql, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -139,6 +150,7 @@ public sealed class AppointmentReaderTests
             status: AppointmentStatus.Scheduled,
             fromUtc: StartsAt,
             toUtcExclusive: StartsAt.AddDays(1),
+            patientNameContains: "ana",
             CancellationToken.None);
 
         // No seeded row can match these random ids: an empty result (not an exception) proves the
@@ -158,15 +170,15 @@ public sealed class AppointmentReaderTests
         Assert.Null(result);
     }
 
-    public static TheoryData<Guid?, Guid?, AppointmentStatus?, DateTimeOffset?, DateTimeOffset?> FilterCombinations() =>
+    public static TheoryData<Guid?, Guid?, AppointmentStatus?, DateTimeOffset?, DateTimeOffset?, string?> FilterCombinations() =>
         new()
         {
-            { null, null, null, null, null },
-            { Guid.NewGuid(), null, null, null, null },
-            { null, Guid.NewGuid(), null, null, null },
-            { null, null, AppointmentStatus.Scheduled, null, null },
-            { null, null, null, StartsAt, StartsAt.AddDays(31) },
-            { Guid.NewGuid(), Guid.NewGuid(), AppointmentStatus.Attended, StartsAt, StartsAt.AddDays(31) },
+            { null, null, null, null, null, null },
+            { Guid.NewGuid(), null, null, null, null, null },
+            { null, Guid.NewGuid(), null, null, null, null },
+            { null, null, AppointmentStatus.Scheduled, null, null, null },
+            { null, null, null, StartsAt, StartsAt.AddDays(31), null },
+            { Guid.NewGuid(), Guid.NewGuid(), AppointmentStatus.Attended, StartsAt, StartsAt.AddDays(31), "ana" },
         };
 
     private static MedicalAppointmentsDbContext CreateUnconnectedDbContext()

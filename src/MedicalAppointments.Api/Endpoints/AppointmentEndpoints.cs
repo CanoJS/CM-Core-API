@@ -75,10 +75,11 @@ public static class AppointmentEndpoints
         string? status,
         DateOnly? from,
         DateOnly? to,
+        string? patientName,
         GetMyAppointmentsQueryHandler handler,
         CancellationToken cancellationToken)
     {
-        var query = new GetMyAppointmentsQuery(status, from, to);
+        var query = new GetMyAppointmentsQuery(status, from, to, patientName);
         IReadOnlyList<AppointmentResponse> response = await handler.Handle(query, cancellationToken);
         return TypedResults.Ok(response);
     }
