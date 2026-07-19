@@ -24,7 +24,7 @@ public sealed class GetMyAppointmentsQueryHandlerTests
         var reader = new AppointmentReaderStub([SampleItem()]);
         var handler = CreateHandler(UserRole.Patient, reader);
 
-        await handler.Handle(new GetMyAppointmentsQuery(null, null, null), CancellationToken.None);
+        await handler.Handle(new GetMyAppointmentsQuery(null, null, null, null), CancellationToken.None);
 
         Assert.Equal(PatientId, reader.LastPatientId);
         Assert.Null(reader.LastDoctorId);
@@ -36,7 +36,7 @@ public sealed class GetMyAppointmentsQueryHandlerTests
         var reader = new AppointmentReaderStub([SampleItem()]);
         var handler = CreateHandler(UserRole.Doctor, reader, doctorExists: true);
 
-        await handler.Handle(new GetMyAppointmentsQuery(null, null, null), CancellationToken.None);
+        await handler.Handle(new GetMyAppointmentsQuery(null, null, null, null), CancellationToken.None);
 
         Assert.Equal(DoctorId, reader.LastDoctorId);
         Assert.Null(reader.LastPatientId);
@@ -48,7 +48,7 @@ public sealed class GetMyAppointmentsQueryHandlerTests
         var handler = CreateHandler(UserRole.Doctor, new AppointmentReaderStub([]), doctorExists: false);
 
         await Assert.ThrowsAsync<NotFoundException>(() =>
-            handler.Handle(new GetMyAppointmentsQuery(null, null, null), CancellationToken.None));
+            handler.Handle(new GetMyAppointmentsQuery(null, null, null, null), CancellationToken.None));
     }
 
     [Fact]
@@ -57,7 +57,7 @@ public sealed class GetMyAppointmentsQueryHandlerTests
         var reader = new AppointmentReaderStub([SampleItem()]);
         var handler = CreateHandler(UserRole.Admin, reader);
 
-        await handler.Handle(new GetMyAppointmentsQuery(null, null, null), CancellationToken.None);
+        await handler.Handle(new GetMyAppointmentsQuery(null, null, null, null), CancellationToken.None);
 
         Assert.Null(reader.LastPatientId);
         Assert.Null(reader.LastDoctorId);
@@ -69,7 +69,7 @@ public sealed class GetMyAppointmentsQueryHandlerTests
         var handler = CreateHandler(UserRole.Admin, new AppointmentReaderStub([]));
 
         await Assert.ThrowsAsync<ArgumentException>(() =>
-            handler.Handle(new GetMyAppointmentsQuery("NOT_A_STATUS", null, null), CancellationToken.None));
+            handler.Handle(new GetMyAppointmentsQuery("NOT_A_STATUS", null, null, null), CancellationToken.None));
     }
 
     [Fact]
@@ -79,7 +79,7 @@ public sealed class GetMyAppointmentsQueryHandlerTests
 
         await Assert.ThrowsAsync<ArgumentException>(() =>
             handler.Handle(
-                new GetMyAppointmentsQuery(null, new DateOnly(2026, 7, 20), new DateOnly(2026, 7, 19)),
+                new GetMyAppointmentsQuery(null, new DateOnly(2026, 7, 20), new DateOnly(2026, 7, 19), null),
                 CancellationToken.None));
     }
 
@@ -90,7 +90,7 @@ public sealed class GetMyAppointmentsQueryHandlerTests
         var from = new DateOnly(2026, 1, 1);
 
         await Assert.ThrowsAsync<ArgumentException>(() =>
-            handler.Handle(new GetMyAppointmentsQuery(null, from, from.AddDays(366)), CancellationToken.None));
+            handler.Handle(new GetMyAppointmentsQuery(null, from, from.AddDays(366), null), CancellationToken.None));
     }
 
     [Fact]
@@ -100,7 +100,7 @@ public sealed class GetMyAppointmentsQueryHandlerTests
         var from = new DateOnly(2026, 1, 1);
 
         IReadOnlyList<AppointmentResponse> result = await handler.Handle(
-            new GetMyAppointmentsQuery(null, from, from.AddDays(365)),
+            new GetMyAppointmentsQuery(null, from, from.AddDays(365), null),
             CancellationToken.None);
 
         Assert.Empty(result);
@@ -113,7 +113,7 @@ public sealed class GetMyAppointmentsQueryHandlerTests
         var handler = CreateHandler(UserRole.Admin, reader);
 
         IReadOnlyList<AppointmentResponse> result = await handler.Handle(
-            new GetMyAppointmentsQuery(null, null, null),
+            new GetMyAppointmentsQuery(null, null, null, null),
             CancellationToken.None);
 
         AppointmentResponse response = Assert.Single(result);
@@ -132,7 +132,7 @@ public sealed class GetMyAppointmentsQueryHandlerTests
         var handler = CreateHandler(UserRole.Patient, reader, auditLog: auditLog);
 
         IReadOnlyList<AppointmentResponse> result = await handler.Handle(
-            new GetMyAppointmentsQuery(null, null, null),
+            new GetMyAppointmentsQuery(null, null, null, null),
             CancellationToken.None);
 
         Assert.Null(Assert.Single(result).MedicalNote);
@@ -148,11 +148,55 @@ public sealed class GetMyAppointmentsQueryHandlerTests
         var handler = CreateHandler(UserRole.Doctor, reader, doctorExists: true, auditLog: auditLog);
 
         IReadOnlyList<AppointmentResponse> result = await handler.Handle(
-            new GetMyAppointmentsQuery(null, null, null),
+            new GetMyAppointmentsQuery(null, null, null, null),
             CancellationToken.None);
 
         Assert.Equal("Diagnóstico.", Assert.Single(result).MedicalNote);
         Assert.Equal(item.Id, Assert.Single(auditLog.ReadAppointmentIds));
+    }
+
+    [Fact]
+    public async Task Handle_WhenDoctorWithPatientName_PassesTrimmedFilterToReader()
+    {
+        var reader = new AppointmentReaderStub([SampleItem()]);
+        var handler = CreateHandler(UserRole.Doctor, reader, doctorExists: true);
+
+        await handler.Handle(new GetMyAppointmentsQuery(null, null, null, "  Ana  "), CancellationToken.None);
+
+        Assert.Equal("Ana", reader.LastPatientNameContains);
+    }
+
+    [Fact]
+    public async Task Handle_WhenDoctorWithBlankPatientName_PassesNullFilterToReader()
+    {
+        var reader = new AppointmentReaderStub([SampleItem()]);
+        var handler = CreateHandler(UserRole.Doctor, reader, doctorExists: true);
+
+        await handler.Handle(new GetMyAppointmentsQuery(null, null, null, "   "), CancellationToken.None);
+
+        Assert.Null(reader.LastPatientNameContains);
+    }
+
+    [Fact]
+    public async Task Handle_WhenPatientWithPatientName_DoesNotPassFilterToReader()
+    {
+        var reader = new AppointmentReaderStub([SampleItem()]);
+        var handler = CreateHandler(UserRole.Patient, reader);
+
+        await handler.Handle(new GetMyAppointmentsQuery(null, null, null, "Ana"), CancellationToken.None);
+
+        Assert.Null(reader.LastPatientNameContains);
+    }
+
+    [Fact]
+    public async Task Handle_WhenAdminWithPatientName_DoesNotPassFilterToReader()
+    {
+        var reader = new AppointmentReaderStub([SampleItem()]);
+        var handler = CreateHandler(UserRole.Admin, reader);
+
+        await handler.Handle(new GetMyAppointmentsQuery(null, null, null, "Ana"), CancellationToken.None);
+
+        Assert.Null(reader.LastPatientNameContains);
     }
 
     private static AppointmentListItem SampleItem() => new(
@@ -223,16 +267,20 @@ public sealed class GetMyAppointmentsQueryHandlerTests
 
         public Guid? LastDoctorId { get; private set; }
 
+        public string? LastPatientNameContains { get; private set; }
+
         public Task<IReadOnlyList<AppointmentListItem>> GetAsync(
             Guid? patientId,
             Guid? doctorId,
             AppointmentStatus? status,
             DateTimeOffset? fromUtc,
             DateTimeOffset? toUtcExclusive,
+            string? patientNameContains,
             CancellationToken cancellationToken)
         {
             LastPatientId = patientId;
             LastDoctorId = doctorId;
+            LastPatientNameContains = patientNameContains;
             return Task.FromResult(items);
         }
 

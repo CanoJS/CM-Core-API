@@ -31,6 +31,7 @@ public sealed class GetMyAppointmentsQueryHandler(
 
         Guid? patientId = null;
         Guid? doctorId = null;
+        string? patientNameContains = null;
 
         switch (currentUser.Role)
         {
@@ -41,6 +42,13 @@ public sealed class GetMyAppointmentsQueryHandler(
                 Doctor doctor = await doctorRepository.GetByUserIdAsync(currentUser.UserId, cancellationToken)
                     ?? throw new NotFoundException("No doctor profile is associated with this account.");
                 doctorId = doctor.Id;
+
+                // patientName only ever has an effect for a DOCTOR: it stays null for
+                // PATIENT/ADMIN callers regardless of what they pass, so a doctor can search their
+                // own history but never widen a patient's or admin's view.
+                patientNameContains = string.IsNullOrWhiteSpace(query.PatientName)
+                    ? null
+                    : query.PatientName.Trim();
                 break;
             case UserRole.Admin:
                 break;
@@ -52,6 +60,7 @@ public sealed class GetMyAppointmentsQueryHandler(
             status,
             fromUtc,
             toUtcExclusive,
+            patientNameContains,
             cancellationToken);
 
         var responses = new List<AppointmentResponse>(items.Count);

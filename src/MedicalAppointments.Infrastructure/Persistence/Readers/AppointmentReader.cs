@@ -12,9 +12,11 @@ public sealed class AppointmentReader(MedicalAppointmentsDbContext dbContext) : 
         AppointmentStatus? status,
         DateTimeOffset? fromUtc,
         DateTimeOffset? toUtcExclusive,
+        string? patientNameContains,
         CancellationToken cancellationToken)
     {
-        AppointmentRow[] rows = await BuildListQuery(patientId, doctorId, status, fromUtc, toUtcExclusive)
+        AppointmentRow[] rows = await BuildListQuery(
+                patientId, doctorId, status, fromUtc, toUtcExclusive, patientNameContains)
             .ToArrayAsync(cancellationToken);
 
         return Array.ConvertAll(rows, ToListItem);
@@ -38,7 +40,8 @@ public sealed class AppointmentReader(MedicalAppointmentsDbContext dbContext) : 
         Guid? doctorId,
         AppointmentStatus? status,
         DateTimeOffset? fromUtc,
-        DateTimeOffset? toUtcExclusive)
+        DateTimeOffset? toUtcExclusive,
+        string? patientNameContains = null)
     {
         IQueryable<Appointment> appointments = dbContext.Appointments.AsNoTracking();
 
@@ -67,7 +70,7 @@ public sealed class AppointmentReader(MedicalAppointmentsDbContext dbContext) : 
             appointments = appointments.Where(appointment => appointment.StartsAt < toExclusive);
         }
 
-        return Project(appointments);
+        return Project(appointments, patientNameContains);
     }
 
     // One composed query (single SQL statement with joins) regardless of caller/filter - never
@@ -82,13 +85,21 @@ public sealed class AppointmentReader(MedicalAppointmentsDbContext dbContext) : 
     // re-inlines the whole record constructor into the ORDER BY clause and fails to translate it
     // (independent of, and in addition to, the original AddMinutes bug this method also fixes).
     // Ordering on `appointment.StartsAt`/`appointment.Id` here avoids that entirely.
-    private IQueryable<AppointmentRow> Project(IQueryable<Appointment> appointments) =>
+    // patientNameContains is applied here (on patientProfile, a joined source in this same query
+    // expression), not chained as a .Where() after this method returns - the same reasoning as
+    // the orderby comment below: filtering on a member of an already-constructed AppointmentRow
+    // would force EF Core to re-inline the record constructor and fail to translate. The
+    // `== null` branch short-circuits in three-valued SQL logic (TRUE OR NULL = TRUE), so passing
+    // null here never touches ILIKE at the database.
+    private IQueryable<AppointmentRow> Project(IQueryable<Appointment> appointments, string? patientNameContains = null) =>
         from appointment in appointments
         join patientProfile in dbContext.UserProfiles.AsNoTracking()
             on appointment.PatientId equals patientProfile.Id
         join doctor in dbContext.Doctors.AsNoTracking() on appointment.DoctorId equals doctor.Id
         join doctorProfile in dbContext.UserProfiles.AsNoTracking() on doctor.UserId equals doctorProfile.Id
         join specialty in dbContext.Specialties.AsNoTracking() on doctor.SpecialtyId equals specialty.Id
+        where patientNameContains == null
+            || EF.Functions.ILike(patientProfile.FirstName + " " + patientProfile.LastName, "%" + patientNameContains + "%")
         orderby appointment.StartsAt, appointment.Id
         select new AppointmentRow(
             appointment.Id,
