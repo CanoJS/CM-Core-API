@@ -17,6 +17,13 @@
   médicos responde `503` sin revelar detalles y el resto de la API sigue funcionando.
 - Las pruebas automatizadas nunca crean usuarios reales en Supabase Auth; usan un fake de
   `IAuthAdminService`.
+- Un PATIENT con `medical.user_profiles.active = false` no puede crear (`POST /api/v1/appointments`)
+  ni cancelar (`PATCH /api/v1/appointments/{id}/cancel`) citas; responde `403`. Un DOCTOR inactivo
+  no puede atender citas (`PATCH /api/v1/appointments/{id}/attend`); responde `403`. La
+  verificación se hace contra el perfil actual en base de datos en cada request, no contra el
+  claim `user_role` del JWT — ese claim solo se recalcula al refrescar el token
+  (`custom_access_token_hook`), así que una cuenta desactivada queda bloqueada de inmediato sin
+  esperar la expiración de su access token vigente.
 
 Después de desplegar una migración, ejecutar los Database Advisors de Supabase y resolver
 hallazgos antes de publicar el ambiente.

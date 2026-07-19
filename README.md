@@ -198,7 +198,47 @@ dotnet test MedicalAppointments.slnx --no-build --no-restore
 Requieren `ConnectionStrings:Database` configurada localmente; se ejecutan dentro de
 transacciones revertidas y nunca crean usuarios reales de Supabase Auth.
 
-## Deploy en AWS App Runner
+## Integración de frontends
+
+- **URL base pública:** `https://cm-core-api-cano2-h6gtbjd5dbgeakc9.canadacentral-01.azurewebsites.net`
+- **Swagger:** `https://cm-core-api-cano2-h6gtbjd5dbgeakc9.canadacentral-01.azurewebsites.net/swagger`
+- **Health:** `GET /health/live`
+- **OpenAPI:** `GET /openapi/v1.json` — es la fuente de verdad del contrato; no se duplica aquí.
+- Login y registro se hacen directamente contra Supabase Auth desde el frontend, usando la
+  publishable key de Supabase — el backend nunca recibe la contraseña del usuario.
+- Cada petición a `/api/v1/*` envía `Authorization: Bearer <access_token>` con el access token
+  emitido por Supabase Auth.
+- Angular (navegador) depende de la configuración CORS de la API (`Cors__AllowedOrigins` /
+  `Cors__AllowAnyOrigin`, ver sección de variables de entorno más abajo); Flutter (cliente nativo)
+  no pasa por CORS.
+- En Swagger UI, el botón "Authorize" solo acepta el token puro (sin escribir el prefijo `Bearer `).
+- La URL del proyecto y la publishable key de Supabase se comparten con los equipos de Angular y
+  Flutter por un canal seguro; no se publican claves reales en este README.
+
+Endpoints principales (el documento OpenAPI de arriba tiene el contrato completo, incluyendo
+request/response bodies y códigos de error):
+
+- **Catálogo:** `GET /api/v1/specialties`, `GET /api/v1/doctors` (requieren JWT, como el resto de
+  la API).
+- **Disponibilidad:** `GET /api/v1/doctors/{doctorId}/availability`.
+- **Citas:** `POST /api/v1/appointments`, `GET /api/v1/appointments`, `GET /api/v1/appointments/{id}`,
+  `PATCH /api/v1/appointments/{id}/cancel`, `PATCH /api/v1/appointments/{id}/reschedule`,
+  `PATCH /api/v1/appointments/{id}/attend`.
+- **Admin:** `POST /api/v1/admin/doctors` (alta directa de médicos).
+- **Sesión actual:** `GET /api/v1/users/me`.
+
+## Deploy en Azure App Service
+
+El despliegue activo de esta API es **Azure App Service** (`cm-core-api-cano2`, región
+`canadacentral`), desplegado automáticamente por el workflow de GitHub Actions "Build and deploy
+ASP.Net Core app to Azure Web App - cm-core-api-cano2". Supabase sigue siendo la base de datos y
+el proveedor de autenticación; Azure solo hospeda el contenedor/proceso de la API.
+
+## Deploy en AWS App Runner (histórico)
+
+Sección histórica: describe una preparación de despliegue en AWS App Runner que no es el ambiente
+activo. Se conserva como referencia; el despliegue en producción actual es Azure App Service (ver
+sección anterior).
 
 Supabase sigue siendo la base de datos y el proveedor de autenticación. AWS App Runner solo
 hospeda el contenedor de esta API — nada de Postgres, Auth ni RLS se mueve a AWS.
