@@ -56,13 +56,19 @@ public sealed partial class SupabaseAuthAdminService(
                 // Supabase's `error_code` is stable across releases; the HTTP status for the
                 // same condition has varied (400/409/422), so branch on the code, not the
                 // status. The response body is never logged: it may contain the submitted email.
+                // `error_code` itself is a stable enum-like string (e.g. "captcha_failed",
+                // "validation_failed"), not PII, and is the one piece of information that lets
+                // whoever is on call tell apart "Supabase CAPTCHA protection is on and rejects
+                // this server-to-server call" from a genuine misconfiguration - previously it was
+                // parsed only to check for the "already exists" case and silently dropped
+                // otherwise, so every other rejection reason was indistinguishable in the logs.
                 string? errorCode = await TryReadErrorCodeAsync(response, cancellationToken);
                 if (errorCode is "email_exists" or "user_already_exists")
                 {
                     throw new ConflictException("A user with this email already exists.");
                 }
 
-                LogAuthAdminCallRejected(logger, "invite", (int)response.StatusCode, CorrelationId);
+                LogAuthAdminCallRejected(logger, "invite", (int)response.StatusCode, errorCode ?? "unknown", CorrelationId);
                 throw new AuthServiceException("The identity provider rejected the invitation.");
             }
 
@@ -78,7 +84,7 @@ public sealed partial class SupabaseAuthAdminService(
 
             if (body is null || body.Id == Guid.Empty)
             {
-                LogAuthAdminCallRejected(logger, "invite", (int)response.StatusCode, CorrelationId);
+                LogAuthAdminCallRejected(logger, "invite", (int)response.StatusCode, "unexpected_response_shape", CorrelationId);
                 throw new AuthServiceException("The identity provider returned an unexpected response.");
             }
 
@@ -196,8 +202,8 @@ public sealed partial class SupabaseAuthAdminService(
     [LoggerMessage(
         EventId = 2001,
         Level = LogLevel.Warning,
-        Message = "Supabase Auth Admin {Operation} call rejected with status {StatusCode} (trace {TraceId})")]
-    private static partial void LogAuthAdminCallRejected(ILogger logger, string operation, int statusCode, string traceId);
+        Message = "Supabase Auth Admin {Operation} call rejected with status {StatusCode}, error_code {ErrorCode} (trace {TraceId})")]
+    private static partial void LogAuthAdminCallRejected(ILogger logger, string operation, int statusCode, string errorCode, string traceId);
 
     [LoggerMessage(
         EventId = 2002,

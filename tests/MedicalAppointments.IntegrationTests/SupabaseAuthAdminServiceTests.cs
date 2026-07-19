@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using MedicalAppointments.Application.Common.Exceptions;
 using MedicalAppointments.Infrastructure.Authentication;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
@@ -147,6 +148,30 @@ public sealed class SupabaseAuthAdminServiceTests
             service.InviteDoctorAsync("ana@example.com", "Ana", "López", CancellationToken.None));
     }
 
+    [Theory]
+    [InlineData("captcha_failed")]
+    [InlineData("validation_failed")]
+    public async Task InviteDoctorAsync_WhenRejectedForOtherReason_LogsSupabaseErrorCode(string errorCode)
+    {
+        // Supabase's `error_code` is the only field that tells apart, e.g., CAPTCHA protection
+        // being enabled on the project (which a server-to-server admin call can never satisfy)
+        // from an actual misconfiguration - it must reach the logs, not just the status code.
+        var handler = new FakeHttpMessageHandler(
+            (_, _) => ErrorResponse(HttpStatusCode.UnprocessableEntity, errorCode));
+        var capturingLogger = new CapturingLogger<SupabaseAuthAdminService>();
+        var httpClient = new HttpClient(handler) { BaseAddress = BaseAddress };
+        IOptions<SupabaseAuthAdminOptions> options = Options.Create(new SupabaseAuthAdminOptions
+        {
+            SecretKey = ModernSecretKey,
+        });
+        var service = new SupabaseAuthAdminService(httpClient, options, capturingLogger);
+
+        await Assert.ThrowsAsync<AuthServiceException>(() =>
+            service.InviteDoctorAsync("ana@example.com", "Ana", "López", CancellationToken.None));
+
+        Assert.Contains(capturingLogger.Messages, message => message.Contains(errorCode, StringComparison.Ordinal));
+    }
+
     [Fact]
     public async Task InviteDoctorAsync_WhenHttpRequestFails_ThrowsAuthServiceUnavailableException()
     {
@@ -251,6 +276,24 @@ public sealed class SupabaseAuthAdminServiceTests
         {
             Content = JsonContent.Create(new { error_code = errorCode, msg = "rejected" }),
         });
+
+    private sealed class CapturingLogger<T> : ILogger<T>
+    {
+        public List<string> Messages { get; } = [];
+
+        public IDisposable? BeginScope<TState>(TState state)
+            where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter) =>
+            Messages.Add(formatter(state, exception));
+    }
 
     private sealed class FakeHttpMessageHandler(
         Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> responder) : HttpMessageHandler
