@@ -171,6 +171,30 @@ public sealed class AppointmentEndpointTests
     }
 
     [Fact]
+    public async Task GetMyAppointments_AsDoctorWithPatientNameFilter_IncludesMedicalNoteFromPastAttendedAppointment()
+    {
+        Fixture fixture = BuildFixture();
+        DateTimeOffset pastSlot = ClockNow.AddHours(-3);
+        Guid attendedId = fixture.Appointments.SeedAttended(
+            PatientId,
+            DoctorId,
+            pastSlot,
+            "Paciente estable, sin hallazgos.");
+        using HttpClient client = CreateAuthenticatedClient("DOCTOR", DoctorUserId, fixture);
+
+        HttpResponseMessage response = await client.GetAsync(
+            "/api/v1/appointments?patientName=ana",
+            CancellationToken.None);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using JsonDocument body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        JsonElement item = Assert.Single(body.RootElement.EnumerateArray());
+        Assert.Equal(attendedId.ToString(), item.GetProperty("id").GetString());
+        Assert.Equal("ATTENDED", item.GetProperty("status").GetString());
+        Assert.Equal("Paciente estable, sin hallazgos.", item.GetProperty("medicalNote").GetString());
+    }
+
+    [Fact]
     public async Task GetMyAppointments_AsPatientWithPatientNameFilter_IgnoresFilter()
     {
         Fixture fixture = BuildFixture();
@@ -527,6 +551,23 @@ public sealed class AppointmentEndpointTests
             uint version = 1)
         {
             Appointment appointment = Appointment.Schedule(patientId, doctorId, startsAt, "Control anual", ClockNow.AddDays(-1));
+            appointments[appointment.Id] = appointment;
+            versions[appointment.Id] = version;
+            return appointment.Id;
+        }
+
+        // Seeds a past, already-ATTENDED appointment (with a medical note) directly through the
+        // domain entity - bypassing the HTTP attend flow entirely - so history/search tests can
+        // assert medicalNote is present without exercising AttendAppointment separately.
+        public Guid SeedAttended(
+            Guid patientId,
+            Guid doctorId,
+            DateTimeOffset startsAt,
+            string medicalNote,
+            uint version = 1)
+        {
+            Appointment appointment = Appointment.Schedule(patientId, doctorId, startsAt, "Control anual", ClockNow.AddDays(-1));
+            appointment.Attend(medicalNote, startsAt.AddMinutes(Appointment.DurationMinutes));
             appointments[appointment.Id] = appointment;
             versions[appointment.Id] = version;
             return appointment.Id;

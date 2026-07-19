@@ -165,6 +165,12 @@ ve citas de otro médico aunque el nombre coincida, porque el filtro se aplica s
 acotado a sus propias citas. Si un PATIENT o ADMIN lo envían, se ignora sin cambiar su
 comportamiento habitual.
 
+El DOCTOR ve `medicalNote` de sus citas pasadas `ATTENDED` en este mismo resultado — no fue
+necesario un campo ni un endpoint aparte: el mapeo de respuesta ya ocultaba `medicalNote` solo
+para PATIENT (regla existente, sin relación con `patientName`), así que la nota médica de
+consultas anteriores queda visible igual con o sin el filtro por nombre. Cubierto explícitamente
+por `AppointmentEndpointTests.GetMyAppointments_AsDoctorWithPatientNameFilter_IncludesMedicalNoteFromPastAttendedAppointment`.
+
 ### Idempotencia en la creación de citas
 
 `POST /` acepta un header opcional `Idempotency-Key` (máx. 200 caracteres). Con la misma clave y
