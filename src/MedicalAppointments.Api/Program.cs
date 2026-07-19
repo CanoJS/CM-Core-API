@@ -3,6 +3,7 @@ using MedicalAppointments.Api.Endpoints;
 using MedicalAppointments.Api.ErrorHandling;
 using MedicalAppointments.Api.OpenApi;
 using MedicalAppointments.Application.Abstractions.Authentication;
+using MedicalAppointments.Application.Admin.GetAdminDashboard;
 using MedicalAppointments.Application.Appointments.AttendAppointment;
 using MedicalAppointments.Application.Appointments.CancelAppointment;
 using MedicalAppointments.Application.Appointments.CreateAppointment;
@@ -59,6 +60,7 @@ builder.Services.AddScoped<RegisterDoctorCommandHandler>();
 builder.Services.AddScoped<GetAdminDoctorsQueryHandler>();
 builder.Services.AddScoped<ChangeDoctorStatusCommandHandler>();
 builder.Services.AddScoped<ChangeDoctorSpecialtyCommandHandler>();
+builder.Services.AddScoped<GetAdminDashboardQueryHandler>();
 builder.Services.AddInfrastructure(connectionString, clinicTimeZone, projectUrl, builder.Configuration);
 
 builder.Services
@@ -167,6 +169,7 @@ app.MapDoctorEndpoints();
 app.MapSpecialtyEndpoints();
 app.MapAdminSpecialtyEndpoints();
 app.MapAdminDoctorEndpoints();
+app.MapAdminDashboardEndpoints();
 app.MapUserEndpoints();
 
 app.Run();
