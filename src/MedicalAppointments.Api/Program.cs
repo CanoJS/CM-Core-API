@@ -1,6 +1,7 @@
 using MedicalAppointments.Api.Authentication;
 using MedicalAppointments.Api.Endpoints;
 using MedicalAppointments.Api.ErrorHandling;
+using MedicalAppointments.Api.OpenApi;
 using MedicalAppointments.Application.Abstractions.Authentication;
 using MedicalAppointments.Application.Appointments.AttendAppointment;
 using MedicalAppointments.Application.Appointments.CancelAppointment;
@@ -32,7 +33,11 @@ string projectUrl = builder.Configuration["Supabase:ProjectUrl"]
 string clinicTimeZone = builder.Configuration["Clinic:TimeZone"] ?? "America/Mexico_City";
 string issuer = $"{projectUrl.TrimEnd('/')}/auth/v1";
 
-builder.Services.AddOpenApi();
+builder.Services.AddOpenApi(options =>
+{
+    options.AddDocumentTransformer<BearerSecuritySchemeTransformer>();
+    options.AddOperationTransformer<BearerSecurityRequirementOperationTransformer>();
+});
 builder.Services.AddProblemDetails();
 builder.Services.AddExceptionHandler<ApiExceptionHandler>();
 builder.Services.AddHttpContextAccessor();

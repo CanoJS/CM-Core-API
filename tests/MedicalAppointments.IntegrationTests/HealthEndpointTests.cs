@@ -1,4 +1,5 @@
 using System.Net;
+using System.Text.Json;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
@@ -180,5 +181,48 @@ public sealed class HealthEndpointTests : IClassFixture<WebApplicationFactory<Pr
         HttpResponseMessage response = await enabledClient.GetAsync("/swagger/index.html", CancellationToken.None);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task OpenApiDocument_WhenEnabled_DeclaresBearerSecuritySchemeAndSkipsHealthLive()
+    {
+        await using var factory = new WebApplicationFactory<Program>();
+        using HttpClient enabledClient = factory
+            .WithWebHostBuilder(builder =>
+            {
+                builder.UseEnvironment("Production");
+                builder.ConfigureLogging(logging => logging.ClearProviders());
+                builder.ConfigureAppConfiguration((_, configBuilder) =>
+                    configBuilder.AddInMemoryCollection(new Dictionary<string, string?>
+                    {
+                        ["OpenApi:Enabled"] = "true",
+                    }));
+            })
+            .CreateClient();
+
+        using JsonDocument document = JsonDocument.Parse(
+            await enabledClient.GetStringAsync("/openapi/v1.json", CancellationToken.None));
+
+        JsonElement bearerScheme = document.RootElement
+            .GetProperty("components")
+            .GetProperty("securitySchemes")
+            .GetProperty("Bearer");
+
+        Assert.Equal("http", bearerScheme.GetProperty("type").GetString());
+        Assert.Equal("bearer", bearerScheme.GetProperty("scheme").GetString());
+        Assert.Equal("JWT", bearerScheme.GetProperty("bearerFormat").GetString());
+
+        JsonElement paths = document.RootElement.GetProperty("paths");
+
+        // A protected endpoint must reference the Bearer scheme...
+        JsonElement specialtiesGet = paths.GetProperty("/api/v1/specialties").GetProperty("get");
+        Assert.True(specialtiesGet.TryGetProperty("security", out JsonElement specialtiesSecurity));
+        Assert.Contains(
+            specialtiesSecurity.EnumerateArray(),
+            requirement => requirement.TryGetProperty("Bearer", out _));
+
+        // ...but /health/live (AllowAnonymous) must not be marked as requiring it.
+        JsonElement healthLiveGet = paths.GetProperty("/health/live").GetProperty("get");
+        Assert.False(healthLiveGet.TryGetProperty("security", out _));
     }
 }
