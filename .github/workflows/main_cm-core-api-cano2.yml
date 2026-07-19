@@ -52,4 +52,4 @@ jobs:
           app-name: 'cm-core-api-cano2'
           slot-name: 'Production'
           package: .
-          publish-profile: ${{ secrets.AZUREAPPSERVICE_PUBLISHPROFILE_DAF0BFF6E7A140AF8B746FD1CF169010 }}
+          publish-profile: ${{ secrets.AZUREAPPSERVICE_PUBLISHPROFILE }}
