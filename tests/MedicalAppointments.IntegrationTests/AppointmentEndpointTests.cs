@@ -10,6 +10,7 @@ using MedicalAppointments.Application.Abstractions.Queries;
 using MedicalAppointments.Application.Common.Exceptions;
 using MedicalAppointments.Domain.Appointments;
 using MedicalAppointments.Domain.Doctors;
+using MedicalAppointments.Domain.Users;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -359,6 +360,7 @@ public sealed class AppointmentEndpointTests
     {
         Appointments = new InMemoryAppointmentRepository(),
         Doctors = new InMemoryDoctorRepositoryForAppointments(),
+        UserProfiles = new InMemoryUserProfileRepositoryForAppointments(),
     };
 
     private static HttpClient CreateAuthenticatedClient(string role, Guid userId, Fixture fixture)
@@ -389,6 +391,9 @@ public sealed class AppointmentEndpointTests
                 services.RemoveAll<IAppointmentReader>();
                 services.AddSingleton<IAppointmentReader>(fixture.Appointments);
 
+                services.RemoveAll<IUserProfileRepository>();
+                services.AddSingleton<IUserProfileRepository>(fixture.UserProfiles);
+
                 services.RemoveAll<IIdempotencyStore>();
                 services.AddSingleton<IIdempotencyStore>(new InMemoryIdempotencyStore());
 
@@ -409,6 +414,8 @@ public sealed class AppointmentEndpointTests
         public required InMemoryAppointmentRepository Appointments { get; set; }
 
         public required InMemoryDoctorRepositoryForAppointments Doctors { get; set; }
+
+        public required InMemoryUserProfileRepositoryForAppointments UserProfiles { get; set; }
     }
 
     private sealed class FixedClock(DateTimeOffset now) : IClock
@@ -442,6 +449,23 @@ public sealed class AppointmentEndpointTests
         public void PrepareSpecialtyUpdate(Doctor doctor, uint version)
         {
         }
+    }
+
+    // Only PatientId ever calls Create/Cancel as PATIENT in this file (Admin/Doctor callers never
+    // trigger the Active lookup), so a single active profile is enough to keep every existing
+    // "golden path" scenario passing under the new Active gate.
+    private sealed class InMemoryUserProfileRepositoryForAppointments : IUserProfileRepository
+    {
+        private readonly Dictionary<Guid, UserProfile> byId = new()
+        {
+            [PatientId] = new UserProfile(PatientId, "Ana", "López", "ana@example.com", UserRole.Patient),
+        };
+
+        public Task<bool> ExistsByEmailAsync(string email, CancellationToken cancellationToken) =>
+            Task.FromResult(false);
+
+        public Task<UserProfile?> GetByIdAsync(Guid id, CancellationToken cancellationToken) =>
+            Task.FromResult(byId.GetValueOrDefault(id));
     }
 
     /// <summary>

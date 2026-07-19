@@ -50,6 +50,38 @@ public sealed class CreateAppointmentCommandHandlerTests
     }
 
     [Fact]
+    public async Task Handle_WhenPatientProfileIsInactive_ThrowsForbidden()
+    {
+        var handler = CreateHandler(
+            new AppointmentRepositoryStub(),
+            hasConflict: false,
+            userProfileRepository: new UserProfileRepositoryStub(CreateInactivePatientProfile()));
+        var command = new CreateAppointmentCommand(
+            Guid.NewGuid(),
+            new DateTimeOffset(2026, 7, 20, 15, 30, 0, TimeSpan.Zero),
+            "Control anual");
+
+        await Assert.ThrowsAsync<ForbiddenException>(() =>
+            handler.Handle(command, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task Handle_WhenPatientProfileIsMissing_ThrowsNotFound()
+    {
+        var handler = CreateHandler(
+            new AppointmentRepositoryStub(),
+            hasConflict: false,
+            userProfileRepository: new UserProfileRepositoryStub(profile: null));
+        var command = new CreateAppointmentCommand(
+            Guid.NewGuid(),
+            new DateTimeOffset(2026, 7, 20, 15, 30, 0, TimeSpan.Zero),
+            "Control anual");
+
+        await Assert.ThrowsAsync<NotFoundException>(() =>
+            handler.Handle(command, CancellationToken.None));
+    }
+
+    [Fact]
     public async Task Handle_WithIdempotencyKey_FirstCall_StagesRecordAndCreates()
     {
         var appointments = new AppointmentRepositoryStub();
@@ -181,7 +213,8 @@ public sealed class CreateAppointmentCommandHandlerTests
         AppointmentRepositoryStub appointments,
         bool hasConflict,
         FakeIdempotencyStore? idempotencyStore = null,
-        UnitOfWorkStub? unitOfWork = null)
+        UnitOfWorkStub? unitOfWork = null,
+        UserProfileRepositoryStub? userProfileRepository = null)
     {
         appointments.HasConflict = hasConflict;
         return new CreateAppointmentCommandHandler(
@@ -190,8 +223,19 @@ public sealed class CreateAppointmentCommandHandlerTests
             new ClinicScheduleStub(),
             new DoctorRepositoryStub(),
             appointments,
+            userProfileRepository ?? new UserProfileRepositoryStub(CreateActivePatientProfile()),
             idempotencyStore ?? new FakeIdempotencyStore(),
             unitOfWork ?? new UnitOfWorkStub());
+    }
+
+    private static UserProfile CreateActivePatientProfile() =>
+        new(CurrentUserId, "Ana", "López", "ana@example.com", UserRole.Patient);
+
+    private static UserProfile CreateInactivePatientProfile()
+    {
+        UserProfile profile = CreateActivePatientProfile();
+        profile.Deactivate();
+        return profile;
     }
 
     private sealed class CurrentUserStub : ICurrentUser
@@ -258,6 +302,15 @@ public sealed class CreateAppointmentCommandHandlerTests
         public void PrepareRescheduleUpdate(Appointment appointment, uint version)
         {
         }
+    }
+
+    private sealed class UserProfileRepositoryStub(UserProfile? profile) : IUserProfileRepository
+    {
+        public Task<bool> ExistsByEmailAsync(string email, CancellationToken cancellationToken) =>
+            Task.FromResult(false);
+
+        public Task<UserProfile?> GetByIdAsync(Guid id, CancellationToken cancellationToken) =>
+            Task.FromResult(profile);
     }
 
     private sealed class UnitOfWorkStub(bool throwOnFirstSave = false) : IUnitOfWork
