@@ -13,6 +13,7 @@ public sealed class CancelAppointmentCommandHandler(
     ICurrentUser currentUser,
     IClock clock,
     IAppointmentRepository appointmentRepository,
+    IUserProfileRepository userProfileRepository,
     IUnitOfWork unitOfWork)
     : ICommandHandler<CancelAppointmentCommand, CancelAppointmentResponse>
 {
@@ -23,6 +24,22 @@ public sealed class CancelAppointmentCommandHandler(
         if (currentUser.Role is not (UserRole.Patient or UserRole.Admin))
         {
             throw new ForbiddenException("Only patients and administrators can cancel appointments.");
+        }
+
+        // A deactivated patient's existing JWT keeps its PATIENT role claim until the token is
+        // refreshed (the custom access token hook only recomputes user_role on refresh), so the
+        // role check above alone cannot reject them. Active is the authoritative flag. ADMIN is
+        // unaffected: its behavior for cancelling is unchanged.
+        if (currentUser.Role == UserRole.Patient)
+        {
+            UserProfile patientProfile =
+                await userProfileRepository.GetByIdAsync(currentUser.UserId, cancellationToken)
+                    ?? throw new NotFoundException("The authenticated user profile does not exist.");
+
+            if (!patientProfile.Active)
+            {
+                throw new ForbiddenException("Inactive accounts cannot cancel appointments.");
+            }
         }
 
         if (!ConcurrencyToken.TryParse(command.Version, out uint version))
