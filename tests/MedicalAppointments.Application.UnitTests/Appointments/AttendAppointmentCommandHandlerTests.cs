@@ -52,6 +52,18 @@ public sealed class AttendAppointmentCommandHandlerTests
     }
 
     [Fact]
+    public async Task Handle_WhenDoctorProfileIsInactive_ThrowsForbidden()
+    {
+        Appointment appointment = CreateAppointment(Now.AddHours(-1));
+        var handler = CreateHandler(UserRole.Doctor, appointment, doctorExists: true, doctorActive: false);
+
+        await Assert.ThrowsAsync<ForbiddenException>(() =>
+            handler.Handle(
+                new AttendAppointmentCommand(appointment.Id, "Nota.", "0"),
+                CancellationToken.None));
+    }
+
+    [Fact]
     public async Task Handle_WhenAppointmentBelongsToAnotherDoctor_ThrowsNotFound()
     {
         Appointment appointment = CreateAppointment(Now.AddHours(-1), doctorId: Guid.NewGuid());
@@ -148,11 +160,12 @@ public sealed class AttendAppointmentCommandHandlerTests
         UserRole role,
         Appointment? appointment,
         bool doctorExists,
+        bool doctorActive = true,
         UnitOfWorkStub? unitOfWork = null) =>
         new(
             new CurrentUserStub(role),
             new ClockStub(),
-            new DoctorRepositoryStub(doctorExists),
+            new DoctorRepositoryStub(doctorExists, doctorActive),
             new AppointmentRepositoryStub(appointment),
             unitOfWork ?? new UnitOfWorkStub(throwConflict: false));
 
@@ -168,7 +181,7 @@ public sealed class AttendAppointmentCommandHandlerTests
         public DateTimeOffset UtcNow => Now;
     }
 
-    private sealed class DoctorRepositoryStub(bool doctorExists) : IDoctorRepository
+    private sealed class DoctorRepositoryStub(bool doctorExists, bool doctorActive = true) : IDoctorRepository
     {
         public Task<bool> IsActiveAsync(Guid doctorId, CancellationToken cancellationToken) =>
             Task.FromResult(true);
@@ -180,8 +193,21 @@ public sealed class AttendAppointmentCommandHandlerTests
         public Task<Doctor?> GetByIdAsync(Guid id, CancellationToken cancellationToken) =>
             Task.FromResult<Doctor?>(null);
 
-        public Task<Doctor?> GetByUserIdAsync(Guid userId, CancellationToken cancellationToken) =>
-            Task.FromResult(doctorExists ? new Doctor(DoctorId, DoctorUserId, Guid.NewGuid()) : null);
+        public Task<Doctor?> GetByUserIdAsync(Guid userId, CancellationToken cancellationToken)
+        {
+            if (!doctorExists)
+            {
+                return Task.FromResult<Doctor?>(null);
+            }
+
+            var doctor = new Doctor(DoctorId, DoctorUserId, Guid.NewGuid());
+            if (!doctorActive)
+            {
+                doctor.SetActive(false);
+            }
+
+            return Task.FromResult<Doctor?>(doctor);
+        }
 
         public void PrepareStatusUpdate(Doctor doctor, uint version)
         {
