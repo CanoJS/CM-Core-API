@@ -20,6 +20,7 @@ public sealed class CreateAppointmentCommandHandler(
     IClinicSchedule clinicSchedule,
     IDoctorRepository doctorRepository,
     IAppointmentRepository appointmentRepository,
+    IUserProfileRepository userProfileRepository,
     IIdempotencyStore idempotencyStore,
     IUnitOfWork unitOfWork)
     : ICommandHandler<CreateAppointmentCommand, CreateAppointmentResponse>
@@ -40,6 +41,17 @@ public sealed class CreateAppointmentCommandHandler(
         if (currentUser.Role != UserRole.Patient)
         {
             throw new ForbiddenException("Only patients can book appointments.");
+        }
+
+        // A deactivated patient's existing JWT keeps its PATIENT role claim until the token is
+        // refreshed (the custom access token hook only recomputes user_role on refresh), so the
+        // role check above alone cannot reject them. Active is the authoritative flag.
+        UserProfile patientProfile = await userProfileRepository.GetByIdAsync(currentUser.UserId, cancellationToken)
+            ?? throw new NotFoundException("The authenticated user profile does not exist.");
+
+        if (!patientProfile.Active)
+        {
+            throw new ForbiddenException("Inactive accounts cannot book appointments.");
         }
 
         string? idempotencyKey = NormalizeIdempotencyKey(command.IdempotencyKey);

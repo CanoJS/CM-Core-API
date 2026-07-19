@@ -110,17 +110,73 @@ public sealed class CancelAppointmentCommandHandlerTests
             handler.Handle(new CancelAppointmentCommand(appointment.Id, "0"), CancellationToken.None));
     }
 
+    [Fact]
+    public async Task Handle_WhenPatientProfileIsInactive_ThrowsForbidden()
+    {
+        Appointment appointment = CreateAppointment(Now.AddDays(5));
+        var handler = CreateHandler(
+            UserRole.Patient,
+            appointment,
+            userProfileRepository: new UserProfileRepositoryStub(CreateInactivePatientProfile()));
+
+        await Assert.ThrowsAsync<ForbiddenException>(() =>
+            handler.Handle(new CancelAppointmentCommand(appointment.Id, "0"), CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task Handle_WhenPatientProfileIsMissing_ThrowsNotFound()
+    {
+        Appointment appointment = CreateAppointment(Now.AddDays(5));
+        var handler = CreateHandler(
+            UserRole.Patient,
+            appointment,
+            userProfileRepository: new UserProfileRepositoryStub(profile: null));
+
+        await Assert.ThrowsAsync<NotFoundException>(() =>
+            handler.Handle(new CancelAppointmentCommand(appointment.Id, "0"), CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task Handle_WhenAdminCancelsAndPatientProfileIsInactive_StillCancels()
+    {
+        // ADMIN's own behavior is unaffected by the patient's Active flag - only PATIENT-
+        // initiated cancellations are gated by it.
+        Appointment appointment = CreateAppointment(Now.AddDays(5));
+        var handler = CreateHandler(
+            UserRole.Admin,
+            appointment,
+            userProfileRepository: new UserProfileRepositoryStub(CreateInactivePatientProfile()));
+
+        CancelAppointmentResponse response = await handler.Handle(
+            new CancelAppointmentCommand(appointment.Id, "0"),
+            CancellationToken.None);
+
+        Assert.Equal("CANCELLED", response.Status);
+    }
+
     private static Appointment CreateAppointment(DateTimeOffset startsAt, Guid? patientId = null) =>
         Appointment.Schedule(patientId ?? PatientId, Guid.NewGuid(), startsAt, "Control anual", Now);
+
+    private static UserProfile CreateActivePatientProfile() =>
+        new(PatientId, "Ana", "López", "ana@example.com", UserRole.Patient);
+
+    private static UserProfile CreateInactivePatientProfile()
+    {
+        UserProfile profile = CreateActivePatientProfile();
+        profile.Deactivate();
+        return profile;
+    }
 
     private static CancelAppointmentCommandHandler CreateHandler(
         UserRole role,
         Appointment? appointment,
-        UnitOfWorkStub? unitOfWork = null) =>
+        UnitOfWorkStub? unitOfWork = null,
+        UserProfileRepositoryStub? userProfileRepository = null) =>
         new(
             new CurrentUserStub(role),
             new ClockStub(),
             new AppointmentRepositoryStub(appointment),
+            userProfileRepository ?? new UserProfileRepositoryStub(CreateActivePatientProfile()),
             unitOfWork ?? new UnitOfWorkStub(throwConflict: false));
 
     private sealed class CurrentUserStub(UserRole role) : ICurrentUser
@@ -157,6 +213,15 @@ public sealed class CancelAppointmentCommandHandlerTests
         public void PrepareRescheduleUpdate(Appointment appointment, uint version)
         {
         }
+    }
+
+    private sealed class UserProfileRepositoryStub(UserProfile? profile) : IUserProfileRepository
+    {
+        public Task<bool> ExistsByEmailAsync(string email, CancellationToken cancellationToken) =>
+            Task.FromResult(false);
+
+        public Task<UserProfile?> GetByIdAsync(Guid id, CancellationToken cancellationToken) =>
+            Task.FromResult(profile);
     }
 
     private sealed class UnitOfWorkStub(bool throwConflict) : IUnitOfWork

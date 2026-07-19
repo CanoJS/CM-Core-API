@@ -37,6 +37,16 @@ public sealed class AttendAppointmentCommandHandler(
         Doctor doctor = await doctorRepository.GetByUserIdAsync(currentUser.UserId, cancellationToken)
             ?? throw new NotFoundException("The appointment does not exist.");
 
+        // A deactivated doctor's existing JWT keeps its DOCTOR role claim until the token is
+        // refreshed, so the role check above alone cannot reject them. ChangeDoctorStatusCommand
+        // is the only place that ever changes this flag, and it always toggles the doctor's
+        // profile.Active in the same transaction, so doctor.Active is an authoritative proxy for
+        // profile status here - no extra IUserProfileRepository round trip is needed.
+        if (!doctor.Active)
+        {
+            throw new ForbiddenException("Inactive doctor accounts cannot attend appointments.");
+        }
+
         Appointment appointment = await appointmentRepository.GetByIdAsync(command.AppointmentId, cancellationToken)
             ?? throw new NotFoundException("The appointment does not exist.");
 
